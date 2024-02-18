@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# A CloudFormation template to create/configure DMS tasks based on parameters
+# This will create a DMS replication instance, a task, a PostgreSQL endpoint, and a Kafka endpoint
+Description: AWS CloudFormation Template for Database Migration Service (DMS)
+
+Parameters:
+  ReplicationInstanceClass:
+    Type: String
+    Default: "dms.t3.medium"
+    Description: Replication instance class for DMS
+
+  ReplicationInstanceStorage:
+    Type: Number
+    Default: 100
+    Description: Storage capacity for the replication instance in gigabytes
+
+  ReplicationSubnetGroup:
+    Type: String
+    Default: ""
+    Description: Replication subnet group identifier
+
+  AvailabilityZone:
+    Type: String
+    Default: ""
+    Description: Availability zone for the replication instance
+
+  ReplicationInstanceIdentifier:
+    Description: ReplicationInstanceIdentifier
+    Type: String
+    Default: ""
+
+  ReplicationTaskType:
+    Type: String
+    Default: "migrate"
+    Description: Type of replication task (e.g., migrate, ongoing)
+
+  TableMappings:
+    Type: String
+    Default: ""
+    Description: Mapping rules for tables in the replication task
+
+  VpcSecurityGroupIds:
+    Description: Specifies the virtual private cloud (VPC) security group to be used with the replication instance. The VPC security group must work with the VPC containing the replication instance.
+    Type: String
+    Default: VPC-us-east-1
+
+  PostgresCertificateArn:
+    Type: String
+    Default: ""
+    Description: ARN of the certificate for PostgreSQL SSL connection
+
+  KafkaCertificateArn:
+    Type: String
+    Default: ""
+    Description: ARN of the certificate for Kafka SSL connection
+
+Resources:
+  MyReplicationInstance:
+    Type: AWS::DMS::ReplicationInstance
+    Properties:
+      ReplicationInstanceClass: !Ref ReplicationInstanceClass
+      AllocatedStorage: !Ref ReplicationInstanceStorage
+      ReplicationInstanceIdentifier: !Ref ReplicationInstanceIdentifier
+      ReplicationSubnetGroupIdentifier: !Ref ReplicationSubnetGroup
+      AvailabilityZone: !Ref AvailabilityZone
+      VpcSecurityGroupIds: !Ref VpcSecurityGroupIds
+
+  MyDatabaseMigrationTask:
+    Type: AWS::DMS::ReplicationTask
+    Properties:
+      MigrationType: !Ref ReplicationTaskType
+      ReplicationInstanceArn: !Ref MyReplicationInstance
+      ReplicationTaskIdentifier: "MyDatabaseMigrationTask"
+      SourceEndpointArn: !Ref MyPostgresEndpoint
+      TargetEndpointArn: !Ref MyKafkaEndpoint
+      TableMappings: !Ref TableMappings
+
+  MyPostgresEndpoint:
+    Type: AWS::DMS::Endpoint
+    Properties:
+      EndpointIdentifier: "MyPostgresEndpoint"
+      EndpointType: "source"
+      EngineName: "postgres"
+      ServerName: "your-postgres-server-name"
+      Port: 5432
+      DatabaseName: "your-database-name"
+      Username: "your-username"
+      Password: "your-password"
+      SslMode: "require"
+      CertificateArn: !Ref PostgresCertificateArn
+      Tags: 
+        - Key: "Name"
+          Value: "MyPostgresEndpoint"
+
+  MyKafkaEndpoint:
+    Type: AWS::DMS::Endpoint
+    Properties:
+      EndpointIdentifier: "MyKafkaEndpoint"
+      EndpointType: "target"
+      EngineName: "kafka"

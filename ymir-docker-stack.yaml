@@ -1,0 +1,3963 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  Cloudformation Template for Ymir (Docker) - 20240104
+    - Added Conditionals for all ASG Groups (Auth, API, Gen, Test, API) and their respective resources
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Server Configuration
+        Parameters:
+          - countAPI
+          - countAPITEST
+          - countGEN
+          - countAUTH
+          - countTEST
+          - instanceTypeAUTH
+          - instanceTypeAPI
+          - instanceTypeGEN
+          - instanceTypeTEST
+          - instanceTypeTESTAPI
+          - countMaxGEN
+          - countMaxTEST
+          - onDemand
+          - nwServerIdAPI
+          - nwServerIdApiTEST
+          - nwServerIdGEN
+          - nwServerIdAUTH
+          - nwServerIdTEST
+      - Label:
+          default: Tag Configuration
+        Parameters:
+          - Environment
+          - Location
+          - Release
+          - Email
+      - Label:
+          default: Server Timestamps
+        Parameters:
+          - versionAPI
+          - versionAPITEST
+          - versionGEN
+          - versionAUTH
+          - versionTEST
+      - Label:
+          default: Stack Configuration
+        Parameters:
+          - AuthGroup
+          - GenGroup
+          - ApiTestGroup
+          - TestGroup
+          - NetworkStackNameParameter
+          - LoadBalancerCertificate
+          - KeyPair
+          - S3BucketServer
+          - S3BucketLambda
+          - DnsHostedZone
+          - DnsSubDomain
+          - nwAwsSmRegion
+          - nwUseAwsSm
+          - nwBootstrapSecret
+          - nwBuildNumber
+          - nwCloudSchema
+          - nwCloudAuthSchema
+          - nwDatadogApiKey
+          - nwDbConnection
+          - RegionUnitType
+          - OtelTracesSampler
+          - OtelCollectorHostname
+      - Label:
+          default: Alarm Configuration
+        Parameters:
+          - AlarmsEnabled
+    ParameterLabels:
+      OtelTracesSampler:
+        default: X-ray's sampling rate percentage (lower is less expensive)
+      onDemand:
+        default: Percentage of On-Demand Instances
+      countAPI:
+        default: The desired number of API servers.
+      countAPITEST:
+        default: The desired number of API servers for Auto Tests
+      countGEN:
+        default: The desired number of GEN servers.
+      countMaxGEN:
+        default: The max number of GEN servers.
+      countAUTH:
+        default: The desired number of AUTH servers.
+      countTEST:
+        default: The desired number of TEST servers.
+      countMaxTEST:
+        default: The max number of TEST servers.
+      instanceTypeAUTH:
+        default: Primary instance type for AUTH servers.
+      instanceTypeAPI:
+        default: Primary instance type for API servers.
+      instanceTypeGEN:
+        default: Primary instance type for GEN servers.
+      instanceTypeTESTAPI:
+        default: Primary Instance type for TEST API servers.
+      instanceTypeTEST:
+        default: Primary instance type for TEST servers.
+      KeyPair:
+        default: The SSH key attached to servers.
+      AuthGroup:
+        default: Optionally deploy AUTH resources.
+      GenGroup:
+        default: Optionally deploy GEN resources.
+      ApiTestGroup:
+        default: Optionally deploy API TEST resources.
+      TestGroup:
+        default: Optionally deploy TEST resources.
+      NetworkStackNameParameter:
+        default: The name of the VPC stack to import network configuration from
+      LoadBalancerCertificate:
+        default: The ID of the certificate to use TLS connections
+      S3BucketServer:
+        default: >-
+          The name of the S3 bucket for Server code, e.g. nw-maven-1 or
+          nw-arch-oregon
+      S3BucketLambda:
+        default: >-
+          The name of the S3 bucket for Lambda functions e.g. nw-us-east-1,
+          nw-maven-1, nw-arch-oregon
+      DnsHostedZone:
+        default: The hosted zone name, e.g. nextworld.net. or prod.nextworld.net.
+      DnsSubDomain:
+        default: The subdomain name, e.g. .nextworld.net or .prod.nextworld.net
+      nwAwsSmRegion:
+        default: Region for bootstrap secret manager
+      nwUseAwsSm:
+        default: Use Secret Manager
+      nwBootstrapSecret:
+        default: Bootstrap secret name
+      nwBuildNumber:
+        default: The version of server code to run
+      nwCloudSchema:
+        default: Nextworld Cloud Schema
+      nwCloudAuthSchema:
+        default: Nextworld Cloud Auth Schema
+      nwDatadogApiKey:
+        default: API key for Datadog
+      nwDbConnection:
+        default: The Db endpoint in the correct format
+      nwServerIdAPI:
+        default: The name of the API server record
+      nwServerIdGEN:
+        default: The name of the GEN server record
+      nwServerIdAUTH:
+        default: The name of the AUTH server record
+      nwServerIdTEST:
+        default: The name of the TEST server record
+      RegionUnitType:
+        default: Defines DNS record for the stack e.g. 20202dev or 20202a
+      versionAPI:
+        default: API server timestamp
+      versionAPITEST:
+        default: API-TEST server timestamp
+      versionGEN:
+        default: GEN server timestamp
+      versionAUTH:
+        default: AUTH server timestamp
+      versionTEST:
+        default: TEST server timestamp
+      AlarmsEnabled:
+        default: Turns all CloudWatch alarms on or off
+      Environment:
+        default: Use lowercase, choose between dev or prod
+      Location:
+        default: >-
+          Use lowercase state abbreviations, e.g. va for us-east-1, oh for
+          us-east-2, ca for us-west-1, or for us-west-2
+      Release:
+        default: Use lowercase, e.g. titan
+      Email:
+        default: Use lowercase, email address, e.g. jarod.rosenthal@nextworld.net
+
+Parameters:
+  OtelCollectorHostname:
+    Type: String
+    Description: The hostname of the Otel Collector that collects the OTLP Traces
+    Default: otel-collector
+  OtelTracesSampler:
+    Type: String
+    Description: The frequency for X-ray's sampling rate percentage (default is 0.001)
+    Default: 0.001
+  onDemand:
+    Type: String
+    Description: >-
+      Enter the percentage of On-Demand instances to run, 0% = All Spot, 50%
+      half and half, 100% = All On-Demand (This will only effect GEN and TEST
+      ASGs)
+    Default: 100
+  countAPI:
+    Type: String
+    Description: >-
+      Enter the number of API servers desired. If more than 5, change max value
+      in Cloudformation template!
+    Default: 0
+  countAPITEST:
+    Type: String
+    Description: >-
+      Enter the number of API servers desired. If more than 5, change max value
+      in Cloudformation template!
+    Default: 0
+  countGEN:
+    Type: String
+    Description: >-
+      Enter the number of Generation servers desired. If more than 5, change max
+      value in Cloudformation template!
+    Default: 0
+  countMaxGEN:
+    Type: String
+    Description: >-
+      Enter the max number of Generation servers. If more than 5, change max
+      value in Cloudformation template!
+    Default: 10
+  countAUTH:
+    Type: String
+    Description: >-
+      Enter the number of Authentication servers desired. If more than 5, change
+      max value in Cloudformation template!
+    Default: 0
+  countTEST:
+    Type: String
+    Description: >-
+      Enter the number of Automated-testing servers desired. If more than 5,
+      change max value in Cloudformation template!
+    Default: 0
+  countMaxTEST:
+    Type: String
+    Description: >-
+      Enter the max number of Automated-testing servers. If more than 5, change
+      max value in Cloudformation template!
+    Default: 12
+  instanceTypeAUTH:
+    Type: String
+    Description: >-
+      Primary instance type for AUTH, must be different than backup choice (m5.large, m5d.large, and m6id.large).
+    Default: m6i.large
+  instanceTypeAPI:
+    Type: String
+    Description: >-
+      Primary instance type for API, must be different than backup choice (m5.large, m5d.large, and m6id.large).
+    Default: m6i.large
+  instanceTypeGEN:
+    Type: String
+    Description: >-
+      Primary instance type for batch (GEN) servers, must be different than backup
+      choice (m5.large, m5d.large, and m6i.large).
+    Default: m6id.large
+  instanceTypeTESTAPI:
+    Type: String
+    Description: >-
+      Primary instance type for TEST API, must be different than backup choice (m5.large, m5d.large, and m6id.large).
+    Default: m6i.large
+  instanceTypeTEST:
+    Type: String
+    Description: >-
+      Primary instance type for automated testing (TEST) servers, must be different than backup
+      choice (r6i.large, r5a.large, and r5d.large).
+    Default: r6a.large
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Specify an initial SSH key to launch instances in this stack.
+    Default: ""
+  AuthGroup:
+    Type: String
+    Description: Enable or Disable AUTH group for AUTH Servers.
+    Default: ""
+  GenGroup:
+    Type: String
+    Description: Enable or Disable GEN group for GEN Servers.
+    Default: ""
+  ApiTestGroup:
+    Type: String
+    Description: Enable or Disable API-TEST group for TEST Servers.
+    Default: ""
+  TestGroup:
+    Type: String
+    Description: Enable or Disable TEST group for TEST Servers.
+    Default: ""
+  NetworkStackNameParameter:
+    Type: String
+    Description: VPC Stack to import network parameters from e.g. VPC-loge-us-west-2
+    Default: ""
+  LoadBalancerCertificate:
+    Type: String
+    Description: >-
+      The ARN of the certificate to use on the load balancer, 
+      ending in 063 is us-west-2 (PROD), 99e is us-east-1 (DEV)
+    Default: ""
+  S3BucketServer:
+    Type: String
+    Description: The name of the DEV or PROD S3 bucket e.g. nw-arch-oregon, nw-maven-1
+    Default: ""
+  S3BucketLambda:
+    Type: String
+    Description: >-
+      The S3 bucket located in the same region as this stack for Lambda
+      Functions e.g. nw-arch-oregon, nw-maven-1, nw-us-east-1
+    Default: ""
+  DnsSubDomain:
+    Type: String
+    Description: The DEV or PROD DNS subdomain. (The value has a leading period. Eg .nextworld.net)
+    Default: ""
+  DnsHostedZone:
+    Type: String
+    Description: The DEV or PROD DNS hosted zone. (The value has a trailing period. Eg nextworld.net.)
+    Default: ""
+  AlarmsEnabled:
+    Type: String
+    Description: Turns on/off all CloudWatch Alarms hooked up to Slack and PagerDuty
+    AllowedValues:
+      - true
+      - false
+    Default: false
+  nwAwsSmRegion:
+    Type: String
+    Description: Enter the region for the bootstrap secret manager
+    Default: ""
+  nwUseAwsSm:
+    Type: String
+    Description: Use Secret Manager for bootstrap?
+    Default: true
+  nwBootstrapSecret:
+    Type: String
+    Description: Enter a bootstrap secret name, \'/db/writer-cloud-db/cloud/nw_app\' is DEV
+    Default: ""
+  nwBuildNumber:
+    Type: String
+    Description: >-
+      Enter a version for this stack to use. You can specify up to the patch
+      level. Example: branch_20230329_155607, 2023.2.xx_latest
+      or 2023.2.01_20230329_155607
+    Default: ""
+  nwCloudSchema:
+    Type: String
+    Description: Enter a cloud schema
+    Default: ""
+  nwCloudAuthSchema:
+    Type: String
+    Description: Enter a cloud auth schema
+    Default: ""
+  nwDatadogApiKey:
+    Type: String
+    Description: DataDog API key, key ending in 508 is DEV, ce2 is PROD
+    Default: ""
+  nwDbConnection:
+    Type: String
+    Description: >-
+      Enter URL used to connect to database in format:
+      jdbc:postgresql://mydbinstance.dev.nextworld.net:5432/database:cachekey
+    Default: ""
+  nwServerIdAPI:
+    Type: String
+    Description: >-
+      Choose a Nextworld server ID from Manage System Servers that will be used
+      by this server type.
+    Default: blank
+  nwServerIdApiTEST:
+    Type: String
+    Description: >-
+      Choose a Nextworld server ID from Manage System Servers that will be used
+      by this server type.
+    Default: blank
+  nwServerIdGEN:
+    Type: String
+    Description: >-
+      Choose a Nextworld server ID from Manage System Servers that will be used
+      by this server type.
+    Default: blank
+  nwServerIdAUTH:
+    Type: String
+    Description: >-
+      Choose a Nextworld server ID from Manage System Servers that will be used
+      by this server type.
+    Default: blank
+  nwServerIdTEST:
+    Type: String
+    Description: >-
+      Choose a Nextworld server ID from Manage System Servers that will be used
+      by this server type.
+    Default: blank
+  RegionUnitType:
+    Type: String
+    Description: Choose the stack purpose format that will be included in the DNS name.
+    Default: ""
+  versionAPI:
+    Type: String
+    Description: >-
+      You must change the version number for instances to perform a rolling
+      update for the API server type.
+    Default: 1.0
+  versionAPITEST:
+    Type: String
+    Description: >-
+      You must change the version number for instances to perform a rolling
+      update for the API server type.
+    Default: 1.0
+  versionGEN:
+    Type: String
+    Description: >-
+      You must change the version number for instances to perform a rolling
+      update for the GEN server type.
+    Default: 1.0
+  versionAUTH:
+    Type: String
+    Description: >-
+      You must change the version number for instances to perform a rolling
+      update for the AUTH server type.
+    Default: 1.0
+  versionTEST:
+    Type: String
+    Description: >-
+      You must change the version number for instances to perform a rolling
+      update for the TEST server type.
+    Default: 1.0
+  Environment:
+    Description: Name of environment
+    Type: String
+    Default: ""
+  Location:
+    Description: Name of location
+    Type: String
+    Default: ""
+  Release:
+    Description: Release's name
+    Type: String
+    Default: titan
+  Email:
+    Description: Stack owner's email address
+    Type: String
+    Default: your.email@nextworld.net
+
+Mappings:
+  AMIMap:
+    us-east-1:
+      AmazonLinux: ami-0845e13e3c05bb487
+    us-east-2:
+      AmazonLinux: ami-06482c57699c53726
+    us-west-1:
+      AmazonLinux: ami-0fc8bc4b9feec9846
+    us-west-2:
+      AmazonLinux: ami-0d7e741206a891abf
+
+Conditions:
+  ApiCountZero: !Equals
+    - !Ref countAPI
+    - '0'
+  ApiTestCountZero: !Equals
+    - !Ref countAPITEST
+    - '0'
+  GenCountZero: !Equals
+    - !Ref countGEN
+    - '0'
+  AuthCountZero: !Equals
+    - !Ref countAUTH
+    - '0'
+  TestCountZero: !Equals
+    - !Ref countTEST
+    - '0'
+  AuthEnable: !Equals
+    - !Ref AuthGroup
+    - true
+  GenEnable: !Equals
+    - !Ref GenGroup
+    - true
+  ApiTestEnable: !Equals
+    - !Ref ApiTestGroup
+    - true
+  TestEnable: !Equals
+    - !Ref TestGroup
+    - true
+
+Outputs:
+  ASGAUTH:
+    Condition: AuthEnable
+    Description: Auth AutoScaling ID
+    Value: !Ref ASGAUTH
+  ASGAPI:
+    Description: API AutoScaling ID
+    Value: !Ref ASGAPI
+  ASGGEN:
+    Condition: GenEnable
+    Description: Gen AutoScaling ID
+    Value: !Ref ASGGEN
+  ASGAPITEST:
+    Condition: ApiTestEnable
+    Description: API AutoScaling ID
+    Value: !Ref ASGAPITEST
+  ASGTEST:
+    Condition: TestEnable
+    Description: Test AutoScaling ID
+    Value: !Ref ASGTEST
+
+Resources:
+
+  # Launch template for the API servers (bootstrapping)
+  LTAPI:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ascending:
+            - 'folder'
+            - 'config'
+          descending:
+            - 'config'
+            - 'folder'
+        folder:
+          commands:
+            create datadog ec2 directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-ec2-logs.d
+            create datadog service directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-service-logs.d
+            create otel directory:
+              command: mkdir -p /home/nextw/otel
+        config:
+          files:
+            /etc/environment:
+              content: !Sub |
+                LOG4J_FORMAT_MSG_NO_LOOKUPS=true
+                NW_HOME_DIR=/home/nextw
+                NW_STACK_TYPE=API
+                NW_TLS_DISABLE=false
+                NW_TLS_KEYSTORE_LOC=/etc/ssl/certs/nextworld/nwks.jks
+                NW_LOG_DIR=/home/nextw/log/
+                OTEL_RESOURCE_ATTRIBUTES=service.name=${AWS::StackName},service.namespace=${nwServerIdAPI}
+                OTEL_TRACES_SAMPLER=parentbased_traceidratio
+                OTEL_TRACES_EXPORTER=otlp
+                OTEL_METRICS_EXPORTER=prometheus
+                OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OtelCollectorHostname}:4317
+                OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+                OTEL_EXPORTER_PROMETHEUS_PORT=9464
+                OTEL_TRACES_SAMPLER_ARG=${OtelTracesSampler}
+                LOG_OUT=/home/nextw/log/nwserver.log
+                LOG_ERR=/home/nextw/log/nwserver.log
+                S3_BUCKET=${S3BucketServer}
+                NW_STACK_NAME=${AWS::StackName}
+                NW_GIT_BRANCH=${nwBuildNumber}
+                NW_SYS_DB=${nwDbConnection}
+                NW_SERVER_ID=${nwServerIdAPI}
+                NW_USE_AWSSM_BOOTSTRAP=${nwUseAwsSm}
+                NW_BOOTSTRAP_SECRET_NAME=${nwBootstrapSecret}
+                NW_AWSSM_REGION=${nwAwsSmRegion}
+                NW_CLOUD_SCHEMA=${nwCloudSchema}
+                NW_CLOUDAUTH_SCHEMA=${nwCloudAuthSchema}
+                NW_DATADOG_API_KEY=${nwDatadogApiKey}
+                NW_RELEASE=${Release}
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/docker-compose.yaml:
+              content: !Sub |
+                version: "3.9"
+                services:
+                  nw-api:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/nw-api:${nwBuildNumber}
+                    container_name: nw-api
+                    hostname: $INSTANCE_ID
+                    volumes:
+                      - ./log:/home/nextw/log
+                      - /etc/ssl/certs/nextworld:/etc/ssl/certs/nextworld
+                    env_file:
+                      - /etc/environment
+                    ports:
+                      - "8084:8084"
+                      - "9464:9464"
+                    depends_on:
+                      datadog:
+                        condition: service_started
+                    healthcheck:
+                      test: ["CMD", "curl", "-Ik", "https://localhost:8084/HealthCheck"]
+                      interval: 30s
+                      timeout: 10s
+                      retries: 3
+                      start_period: 20s
+                  datadog:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/datadog:7.46.0-rc.3
+                    container_name: datadog
+                    env_file:
+                      - /etc/environment
+                    environment:
+                      - DD_API_KEY=${nwDatadogApiKey}
+                      - DD_SITE=datadoghq.com
+                      - DD_LOGS_ENABLED=true
+                      - DD_PROCESS_AGENT_ENABLED=false
+                      - DD_ENABLE_PAYLOADS_EVENTS=false
+                      - DD_ENABLE_PAYLOADS_SERIES=false
+                      - DD_ENABLE_PAYLOADS_SERVICE_CHECKS=false
+                      - DD_ENABLE_PAYLOADS_SKETCHES=false
+                      - DD_EC2_PREFER_IMDSV2=true
+                    volumes:
+                      - /run/docker.sock:/var/run/docker.sock
+                      - /var/log:/var/log
+                      - ./datadog/conf.d:/etc/datadog-agent/conf.d 
+                      - ./log:/log
+                  otel:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aws-otel-collector:v0.28.0
+                    command: ["--config=/etc/otel-agent-config.yaml"]
+                    container_name: otel-collector
+                    ports:
+                      - "4317:4317"
+                    env_file:
+                      - /etc/environment
+                    volumes:
+                      - /home/nextw/otel/config.yaml:/etc/otel-agent-config.yaml
+                  node-exporter:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/node-exporter:v1.6.0
+                    container_name: node-exporter
+                    restart: unless-stopped
+                    volumes:
+                      - /proc:/host/proc:ro
+                      - /sys:/host/sys:ro
+                      - /:/rootfs:ro
+                    command:
+                      - '--path.procfs=/host/proc'
+                      - '--path.rootfs=/rootfs'
+                      - '--path.sysfs=/host/sys'
+                      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                    ports:
+                      - "9100:9100"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-service-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The nwserver.log file
+                  - type: file
+                    path: /log/nwserver.log
+                    service: ServerLogger
+                    source: Nextworld
+                    log_processing_rules:
+                      - type: multi_line
+                        name: multi_line_rule
+                        pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])T\d{2}:\d{2}:\d{2}\.\d{3}
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:API"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-ec2-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The cloudformation bootstrap script log
+                  - type: file
+                    path: /var/log/cfn-init.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:API"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The cloud initialization output log
+                  - type: file
+                    path: /var/log/cloud-init-output.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:API"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The operations bootstrapping file
+                  - type: file
+                    path: /var/log/ops.out
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:API"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/otel/config.yaml:
+              content: !Sub |
+                extensions:
+                  health_check:
+                  pprof:
+                    endpoint: 0.0.0.0:1777
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                processors:
+                  batch:
+                exporters:
+                  logging:
+                    loglevel: debug
+                  awsxray:
+                    region: ${AWS::Region}
+                  awsemf:
+                    region: ${AWS::Region}
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [awsxray]
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/signal.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                # Set increment
+                I=0
+                
+                # Trap the CFN signal
+                trap '/opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                  --region ${AWS::Region}' ERR
+                
+                # Pull and stand up containers
+                echo "Logging into ECR..."
+                aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS \
+                  --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                
+                echo "Pulling images..."
+                docker-compose -f /home/nextw/docker-compose.yaml pull --quiet
+                
+                echo "Standing up images..."
+                docker-compose -f /home/nextw/docker-compose.yaml up -d nw-api
+                docker-compose -f /home/nextw/docker-compose.yaml up -d otel
+                docker-compose -f /home/nextw/docker-compose.yaml up -d node-exporter
+                echo "Trapping signal reporting until container is healthy..."
+                
+                # Hold the signal until the container is marked healthy
+                while [[ $(docker ps -f health=healthy -f name=nw-api -q | wc -l) -eq 0 && "$I" -lt 140 ]]
+                do
+                  # Wait a moment
+                  sleep 1
+              
+                  # If the status is empty, something is wrong. We should be unhealthy
+                  STATUS=$(docker inspect --format='{{json .State.Health.Status}}' nw-api)
+                  if [ -z "$STATUS" ]
+                  then
+                    echo "ERROR - No status reported! The containers didn't start! nwBuildNumber is ${nwBuildNumber}"
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                
+                  # Report status back
+                  if ! (( I % 10 ))
+                  then
+                    echo "The Nextworld container is $STATUS after $I seconds..."
+                  fi
+                
+                  # Increment counter
+                  I=$((I+1))
+                
+                  if (( I >= 139 ))
+                  then
+                    echo "The Nextworld container timed out with a status of $STATUS. Sending unhealthy signal..."
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                done
+                
+                /opt/aws/bin/cfn-signal --exit-code 0 --stack ${AWS::StackName} --resource ASGAPI \
+                  --region ${AWS::Region}
+                echo "The Nextworld container is $STATUS after $I seconds!"
+              mode: '000700'
+              owner: root
+              group: root
+          commands:
+            Logs that cfn-init ran:
+              command: echo 'cfn-init ran successfully.' > /var/log/ops.out
+    Properties:
+      LaunchTemplateName: !Join
+        - ''
+        - - !Sub '${AWS::StackName}'
+          - '-api'
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - AMIMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux
+        InstanceType: !Ref instanceTypeAPI
+        KeyName: !Ref KeyPair
+        IamInstanceProfile:
+          Name: !Ref 'StackInstanceProfile'
+        SecurityGroupIds:
+          - !Ref InstanceSG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            echo export INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /root/.bashrc
+            source /root/.bashrc
+            exec > >(tee /var/log/ops.out|logger -t user-data -s 2>/var/log/ops.err) 2>&1
+            
+            # Run cfn-init. This invokes the Metadata specified above which sets up and triggers the aws logging 
+            # service. It also sets up cfn-signal which instances use to signal SUCCESS to the stack
+            /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LTAPI --region ${AWS::Region} -c ascending \
+                >> /var/log/ops.out
+            
+            # Trigger to force a refresh of the autoscaling group
+            echo ${versionAPI}
+            
+            # Set the Instance ID and export to /etc/environment
+            echo INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /etc/environment
+            
+            # Set the keystore password from the randomized characters used at AMI creation
+            echo NW_TLS_KEYSTORE_PASS=$(echo $GRIZPASS) >> /etc/environment
+            
+            # Run the docker bootstrap and trap the CFN signal
+            bash /home/nextw/signal.sh
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 30
+
+  # Launch template for the GEN servers (bootstrapping)
+  LTGEN:
+    Condition: GenEnable
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ascending:
+            - 'folder'
+            - 'config'
+          descending:
+            - 'config'
+            - 'folder'
+        folder:
+          commands:
+            create datadog ec2 directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-ec2-logs.d
+            create datadog service directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-service-logs.d
+            create otel directory:
+              command: mkdir -p /home/nextw/otel
+        config:
+          files:
+            /etc/environment:
+              content: !Sub |
+                LOG4J_FORMAT_MSG_NO_LOOKUPS=true
+                NW_HOME_DIR=/home/nextw
+                NW_STACK_TYPE=GEN
+                NW_TLS_DISABLE=false
+                NW_TLS_KEYSTORE_LOC=/etc/ssl/certs/nextworld/nwks.jks
+                NW_LOG_DIR=/home/nextw/log/
+                OTEL_RESOURCE_ATTRIBUTES=service.name=${AWS::StackName},service.namespace=${nwServerIdGEN}
+                OTEL_TRACES_SAMPLER=parentbased_traceidratio
+                OTEL_TRACES_EXPORTER=otlp
+                OTEL_METRICS_EXPORTER=prometheus
+                OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OtelCollectorHostname}:4317
+                OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+                OTEL_EXPORTER_PROMETHEUS_PORT=9464
+                OTEL_TRACES_SAMPLER_ARG=${OtelTracesSampler}
+                OTEL_AGENT_JAR_FILE=/home/nextw/lib/aws-opentelemetry-agent-1.18.0.jar
+                LOG_OUT=/home/nextw/log/nwserver.log
+                LOG_ERR=/home/nextw/log/nwserver.log
+                S3_BUCKET=${S3BucketServer}
+                NW_STACK_NAME=${AWS::StackName}
+                NW_GIT_BRANCH=${nwBuildNumber}
+                NW_SYS_DB=${nwDbConnection}
+                NW_SERVER_ID=${nwServerIdGEN}
+                NW_USE_AWSSM_BOOTSTRAP=${nwUseAwsSm}
+                NW_BOOTSTRAP_SECRET_NAME=${nwBootstrapSecret}
+                NW_AWSSM_REGION=${nwAwsSmRegion}
+                NW_CLOUD_SCHEMA=${nwCloudSchema}
+                NW_CLOUDAUTH_SCHEMA=${nwCloudAuthSchema}
+                NW_DATADOG_API_KEY=${nwDatadogApiKey}
+                NW_RELEASE=${Release}
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/docker-compose.yaml:
+              content: !Sub |
+                version: "3.9"
+                services:
+                  nw-gen:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/nw-gen:${nwBuildNumber}
+                    container_name: nw-gen
+                    hostname: $INSTANCE_ID
+                    volumes:
+                      - ./log:/home/nextw/log
+                      - /etc/ssl/certs/nextworld:/etc/ssl/certs/nextworld
+                    env_file:
+                      - /etc/environment
+                    ports:
+                      - "8084:8084"
+                      - "9464:9464"
+                    depends_on:
+                      datadog:
+                        condition: service_started
+                    healthcheck:
+                      test: ["CMD", "curl", "-Ik", "https://localhost:8084/HealthCheck"]
+                      interval: 30s
+                      timeout: 10s
+                      retries: 3
+                      start_period: 20s
+                  datadog:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/datadog:7.46.0-rc.3
+                    container_name: datadog
+                    env_file:
+                      - /etc/environment
+                    environment:
+                      - DD_API_KEY=${nwDatadogApiKey}
+                      - DD_SITE=datadoghq.com
+                      - DD_LOGS_ENABLED=true
+                      - DD_PROCESS_AGENT_ENABLED=false
+                      - DD_ENABLE_PAYLOADS_EVENTS=false
+                      - DD_ENABLE_PAYLOADS_SERIES=false
+                      - DD_ENABLE_PAYLOADS_SERVICE_CHECKS=false
+                      - DD_ENABLE_PAYLOADS_SKETCHES=false
+                      - DD_EC2_PREFER_IMDSV2=true
+                    volumes:
+                      - /run/docker.sock:/var/run/docker.sock
+                      - /var/log:/var/log
+                      - ./datadog/conf.d:/etc/datadog-agent/conf.d 
+                      - ./log:/log
+                  otel:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aws-otel-collector:v0.28.0
+                    command: ["--config=/etc/otel-agent-config.yaml"]
+                    container_name: otel-collector
+                    ports:
+                      - "4317:4317"
+                    env_file:
+                      - /etc/environment
+                    volumes:
+                      - /home/nextw/otel/config.yaml:/etc/otel-agent-config.yaml
+                  node-exporter:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/node-exporter:v1.6.0
+                    container_name: node-exporter
+                    restart: unless-stopped
+                    volumes:
+                      - /proc:/host/proc:ro
+                      - /sys:/host/sys:ro
+                      - /:/rootfs:ro
+                    command:
+                      - '--path.procfs=/host/proc'
+                      - '--path.rootfs=/rootfs'
+                      - '--path.sysfs=/host/sys'
+                      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                    ports:
+                      - "9100:9100"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-service-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The nwserver.log file
+                  - type: file
+                    path: /log/nwserver.log
+                    service: ServerLogger
+                    source: Nextworld
+                    log_processing_rules:
+                      - type: multi_line
+                        name: multi_line_rule
+                        pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])T\d{2}:\d{2}:\d{2}\.\d{3}
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:GEN"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-ec2-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The cloudformation bootstrap script log
+                  - type: file
+                    path: /var/log/cfn-init.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:GEN"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The cloud initialization output log
+                  - type: file
+                    path: /var/log/cloud-init-output.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:GEN"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The operations bootstrapping file
+                  - type: file
+                    path: /var/log/ops.out
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:GEN"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/otel/config.yaml:
+              content: !Sub |
+                extensions:
+                  health_check:
+                  pprof:
+                    endpoint: 0.0.0.0:1777
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                processors:
+                  batch:
+                exporters:
+                  logging:
+                    loglevel: debug
+                  awsxray:
+                    region: ${AWS::Region}
+                  awsemf:
+                    region: ${AWS::Region}
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [awsxray]
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/signal.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                # Set increment
+                I=0
+                
+                # Trap the CFN signal
+                trap '/opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGGEN \
+                  --region ${AWS::Region}' ERR
+                
+                # Pull and stand up containers
+                echo "Logging into ECR..."
+                aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS \
+                  --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                
+                echo "Pulling images..."
+                docker-compose -f /home/nextw/docker-compose.yaml pull --quiet
+                
+                echo "Standing up images..."
+                docker-compose -f /home/nextw/docker-compose.yaml up -d nw-gen
+                docker-compose -f /home/nextw/docker-compose.yaml up -d otel
+                docker-compose -f /home/nextw/docker-compose.yaml up -d node-exporter
+                echo "Trapping signal reporting until container is healthy..."
+                
+                # Hold the signal until the container is marked healthy
+                while [[ $(docker ps -f health=healthy -f name=nw-gen -q | wc -l) -eq 0 && "$I" -lt 140 ]]
+                do
+                  # Wait a moment
+                  sleep 1
+                
+                  # If the status is empty, something is wrong. We should be unhealthy
+                  STATUS=$(docker inspect --format='{{json .State.Health.Status}}' nw-gen)
+                  if [ -z "$STATUS" ]
+                  then
+                    echo "ERROR - No status reported! The containers didn't start! nwBuildNumber is ${nwBuildNumber}"
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGGEN \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                
+                  # Report status back
+                  if ! (( I % 10 ))
+                  then
+                    echo "The Nextworld container is $STATUS after $I seconds..."
+                  fi
+                
+                  # Increment counter
+                  I=$((I+1))
+                
+                  if (( I >= 139 ))
+                  then
+                    echo "The Nextworld container timed out with a status of $STATUS. Sending unhealthy signal..."
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                done
+                
+                /opt/aws/bin/cfn-signal --exit-code 0 --stack ${AWS::StackName} --resource ASGGEN \
+                  --region ${AWS::Region}
+                echo "The Nextworld container is $STATUS after $I seconds!"
+              mode: '000700'
+              owner: root
+              group: root
+          commands:
+            Logs that cfn-init ran:
+              command: echo 'cfn-init ran successfully.' > /var/log/ops.out
+    Properties:
+      LaunchTemplateName: !Join
+        - ''
+        - - !Sub '${AWS::StackName}'
+          - '-gen'
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - AMIMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux
+        InstanceType: !Ref instanceTypeGEN
+        KeyName: !Ref KeyPair
+        IamInstanceProfile:
+          Name: !Ref 'StackInstanceProfile'
+        SecurityGroupIds:
+          - !Ref InstanceSG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            echo export INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /root/.bashrc
+            source /root/.bashrc
+            exec > >(tee /var/log/ops.out|logger -t user-data -s 2>/var/log/ops.err) 2>&1
+
+            # Run cfn-init. This invokes the Metadata specified above which sets up and triggers the aws logging 
+            # service. It also sets up cfn-signal which instances use to signal SUCCESS to the stack
+            /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LTGEN --region ${AWS::Region} -c ascending \
+                >> /var/log/ops.out
+
+            # Trigger to force a refresh of the autoscaling group
+            echo ${versionGEN}
+            
+            # Set the Instance ID and export to /etc/environment
+            echo INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /etc/environment
+
+            # Set the keystore password from the randomized characters used at AMI creation
+            echo NW_TLS_KEYSTORE_PASS=$(echo $GRIZPASS) >> /etc/environment
+
+            # Run the bootstrap and trap the CFN signal
+            bash /home/nextw/signal.sh
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 40
+
+  # Launch template for the TEST servers (bootstrapping)
+  LTTEST:
+    Condition: TestEnable
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ascending:
+            - 'folder'
+            - 'config'
+          descending:
+            - 'config'
+            - 'folder'
+        folder:
+          commands:
+            create datadog ec2 directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-ec2-logs.d
+            create datadog service directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-service-logs.d
+            create otel directory:
+              command: mkdir -p /home/nextw/otel
+        config:
+          files:
+            /etc/environment:
+              content: !Sub |
+                LOG4J_FORMAT_MSG_NO_LOOKUPS=true
+                NW_HOME_DIR=/home/nextw
+                NW_STACK_TYPE=TEST
+                NW_TLS_DISABLE=false
+                NW_TLS_KEYSTORE_LOC=/etc/ssl/certs/nextworld/nwks.jks
+                NW_LOG_DIR=/home/nextw/log/
+                OTEL_RESOURCE_ATTRIBUTES=service.name=${AWS::StackName},service.namespace=${nwServerIdTEST}
+                OTEL_TRACES_SAMPLER=parentbased_traceidratio
+                OTEL_TRACES_EXPORTER=otlp
+                OTEL_METRICS_EXPORTER=prometheus
+                OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OtelCollectorHostname}:4317
+                OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+                OTEL_EXPORTER_PROMETHEUS_PORT=9464
+                OTEL_TRACES_SAMPLER_ARG=${OtelTracesSampler}
+                OTEL_AGENT_JAR_FILE=/home/nextw/lib/aws-opentelemetry-agent-1.18.0.jar
+                LOG_OUT=/home/nextw/log/nwserver.log
+                LOG_ERR=/home/nextw/log/nwserver.log
+                S3_BUCKET=${S3BucketServer}
+                NW_STACK_NAME=${AWS::StackName}
+                NW_GIT_BRANCH=${nwBuildNumber}
+                NW_SYS_DB=${nwDbConnection}
+                NW_SERVER_ID=${nwServerIdTEST}
+                NW_USE_AWSSM_BOOTSTRAP=${nwUseAwsSm}
+                NW_BOOTSTRAP_SECRET_NAME=${nwBootstrapSecret}
+                NW_AWSSM_REGION=${nwAwsSmRegion}
+                NW_CLOUD_SCHEMA=${nwCloudSchema}
+                NW_CLOUDAUTH_SCHEMA=${nwCloudAuthSchema}
+                NW_DATADOG_API_KEY=${nwDatadogApiKey}
+                NW_RELEASE=${Release}
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/docker-compose.yaml:
+              content: !Sub |
+                version: "3.9"
+                services:
+                  nw-test:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/nw-test:${nwBuildNumber}
+                    container_name: nw-test
+                    hostname: $INSTANCE_ID
+                    volumes:
+                      - ./log:/home/nextw/log
+                      - /etc/ssl/certs/nextworld:/etc/ssl/certs/nextworld
+                    env_file:
+                      - /etc/environment
+                    ports:
+                      - "8084:8084"
+                      - "9464:9464"
+                    depends_on:
+                      datadog:
+                        condition: service_started
+                    healthcheck:
+                      test: ["CMD", "curl", "-Ik", "https://localhost:8084/HealthCheck"]
+                      interval: 30s
+                      timeout: 10s
+                      retries: 3
+                      start_period: 20s
+                  datadog:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/datadog:7.46.0-rc.3
+                    container_name: datadog
+                    env_file:
+                      - /etc/environment
+                    environment:
+                      - DD_API_KEY=${nwDatadogApiKey}
+                      - DD_SITE=datadoghq.com
+                      - DD_LOGS_ENABLED=true
+                      - DD_PROCESS_AGENT_ENABLED=false
+                      - DD_ENABLE_PAYLOADS_EVENTS=false
+                      - DD_ENABLE_PAYLOADS_SERIES=false
+                      - DD_ENABLE_PAYLOADS_SERVICE_CHECKS=false
+                      - DD_ENABLE_PAYLOADS_SKETCHES=false
+                      - DD_EC2_PREFER_IMDSV2=true
+                    volumes:
+                      - /run/docker.sock:/var/run/docker.sock
+                      - /var/log:/var/log
+                      - ./datadog/conf.d:/etc/datadog-agent/conf.d 
+                      - ./log:/log
+                  otel:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aws-otel-collector:v0.28.0
+                    command: ["--config=/etc/otel-agent-config.yaml"]
+                    container_name: otel-collector
+                    ports:
+                      - "4317:4317"
+                    env_file:
+                      - /etc/environment
+                    volumes:
+                      - /home/nextw/otel/config.yaml:/etc/otel-agent-config.yaml
+                  node-exporter:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/node-exporter:v1.6.0
+                    container_name: node-exporter
+                    restart: unless-stopped
+                    volumes:
+                      - /proc:/host/proc:ro
+                      - /sys:/host/sys:ro
+                      - /:/rootfs:ro
+                    command:
+                      - '--path.procfs=/host/proc'
+                      - '--path.rootfs=/rootfs'
+                      - '--path.sysfs=/host/sys'
+                      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                    ports:
+                      - "9100:9100"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-service-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The nwserver.log file
+                  - type: file
+                    path: /log/nwserver.log
+                    service: ServerLogger
+                    source: Nextworld
+                    log_processing_rules:
+                      - type: multi_line
+                        name: multi_line_rule
+                        pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])T\d{2}:\d{2}:\d{2}\.\d{3}
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:TEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-ec2-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The cloudformation bootstrap script log
+                  - type: file
+                    path: /var/log/cfn-init.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:TEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The cloud initialization output log
+                  - type: file
+                    path: /var/log/cloud-init-output.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:TEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The operations bootstrapping file
+                  - type: file
+                    path: /var/log/ops.out
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:TEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/otel/config.yaml:
+              content: !Sub |
+                extensions:
+                  health_check:
+                  pprof:
+                    endpoint: 0.0.0.0:1777
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                processors:
+                  batch:
+                exporters:
+                  logging:
+                    loglevel: debug
+                  awsxray:
+                    region: ${AWS::Region}
+                  awsemf:
+                    region: ${AWS::Region}
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [awsxray]
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/signal.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                # Set increment
+                I=0
+                
+                # Trap the CFN signal
+                trap '/opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGTEST \
+                  --region ${AWS::Region}' ERR
+                
+                # Pull and stand up containers
+                echo "Logging into ECR..."
+                aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS \
+                  --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                
+                echo "Pulling images..."
+                docker-compose -f /home/nextw/docker-compose.yaml pull --quiet
+                
+                echo "Standing up images..."
+                docker-compose -f /home/nextw/docker-compose.yaml up -d nw-test
+                docker-compose -f /home/nextw/docker-compose.yaml up -d otel
+                docker-compose -f /home/nextw/docker-compose.yaml up -d node-exporter
+                echo "Trapping signal reporting until container is healthy..."
+                
+                # Hold the signal until the container is marked healthy
+                while [[ $(docker ps -f health=healthy -f name=nw-test -q | wc -l) -eq 0 && "$I" -lt 140 ]]
+                do
+                  # Wait a moment
+                  sleep 1
+                
+                  # If the status is empty, something is wrong. We should be unhealthy
+                  STATUS=$(docker inspect --format='{{json .State.Health.Status}}' nw-test)
+                  if [ -z "$STATUS" ]
+                  then
+                    echo "ERROR - No status reported! The containers didn't start! nwBuildNumber is ${nwBuildNumber}"
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGTEST \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                
+                  # Report status back
+                  if ! (( I % 10 ))
+                  then
+                    echo "The Nextworld container is $STATUS after $I seconds..."
+                  fi
+                
+                  # Increment counter
+                  I=$((I+1))
+                
+                  if (( I >= 139 ))
+                  then
+                    echo "The Nextworld container timed out with a status of $STATUS. Sending unhealthy signal..."
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                done
+                
+                /opt/aws/bin/cfn-signal --exit-code 0 --stack ${AWS::StackName} --resource ASGTEST \
+                  --region ${AWS::Region}
+                echo "The Nextworld container is $STATUS after $I seconds!"
+              mode: '000700'
+              owner: root
+              group: root
+          commands:
+            Logs that cfn-init ran:
+              command: echo 'cfn-init ran successfully.' > /var/log/ops.out
+    Properties:
+      LaunchTemplateName: !Join
+        - ''
+        - - !Sub '${AWS::StackName}'
+          - '-test'
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - AMIMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux
+        InstanceType: !Ref instanceTypeTEST
+        KeyName: !Ref KeyPair
+        IamInstanceProfile:
+          Name: !Ref 'StackInstanceProfile'
+        SecurityGroupIds:
+          - !Ref InstanceSG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            echo export INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /root/.bashrc
+            source /root/.bashrc
+            exec > >(tee /var/log/ops.out|logger -t user-data -s 2>/var/log/ops.err) 2>&1
+
+            # Run cfn-init. This invokes the Metadata specified above which sets up and triggers the aws logging 
+            # service. It also sets up cfn-signal which instances use to signal SUCCESS to the stack
+            /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LTTEST --region ${AWS::Region} -c ascending \
+                >> /var/log/ops.out
+
+            # Trigger to force a refresh of the autoscaling group
+            echo ${versionTEST}
+            
+            # Set the Instance ID and export to /etc/environment
+            echo INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /etc/environment
+
+            # Set the keystore password from the randomized characters used at AMI creation
+            echo NW_TLS_KEYSTORE_PASS=$(echo $GRIZPASS) >> /etc/environment
+
+            # Run the bootstrap and trap the CFN signal
+            bash /home/nextw/signal.sh
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 30
+
+  # Launch template for the AUTH servers (bootstrapping)
+  LTAUTH:
+    Condition: AuthEnable
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ascending:
+            - 'folder'
+            - 'config'
+          descending:
+            - 'config'
+            - 'folder'
+        folder:
+          commands:
+            create datadog ec2 directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-ec2-logs.d
+            create datadog service directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-service-logs.d
+            create otel directory:
+              command: mkdir -p /home/nextw/otel
+        config:
+          files:
+            /etc/environment:
+              content: !Sub |
+                LOG4J_FORMAT_MSG_NO_LOOKUPS=true
+                NW_HOME_DIR=/home/nextw
+                NW_STACK_TYPE=AUTH
+                NW_TLS_DISABLE=false
+                NW_TLS_KEYSTORE_LOC=/etc/ssl/certs/nextworld/nwks.jks
+                NW_LOG_DIR=/home/nextw/log/
+                OTEL_RESOURCE_ATTRIBUTES=service.name=${AWS::StackName},service.namespace=${nwServerIdAUTH}
+                OTEL_TRACES_SAMPLER=parentbased_traceidratio
+                OTEL_TRACES_EXPORTER=otlp
+                OTEL_METRICS_EXPORTER=prometheus
+                OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OtelCollectorHostname}:4317
+                OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+                OTEL_EXPORTER_PROMETHEUS_PORT=9464
+                OTEL_TRACES_SAMPLER_ARG=${OtelTracesSampler}
+                LOG_OUT=/home/nextw/log/nwserver.log
+                LOG_ERR=/home/nextw/log/nwserver.log
+                S3_BUCKET=${S3BucketServer}
+                NW_STACK_NAME=${AWS::StackName}
+                NW_GIT_BRANCH=${nwBuildNumber}
+                NW_SYS_DB=${nwDbConnection}
+                NW_SERVER_ID=${nwServerIdAUTH}
+                NW_USE_AWSSM_BOOTSTRAP=${nwUseAwsSm}
+                NW_BOOTSTRAP_SECRET_NAME=${nwBootstrapSecret}
+                NW_AWSSM_REGION=${nwAwsSmRegion}
+                NW_CLOUD_SCHEMA=${nwCloudSchema}
+                NW_CLOUDAUTH_SCHEMA=${nwCloudAuthSchema}
+                NW_DATADOG_API_KEY=${nwDatadogApiKey}
+                NW_RELEASE=${Release}
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/docker-compose.yaml:
+              content: !Sub |
+                version: "3.9"
+                services:
+                  nw-auth:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/nw-auth:${nwBuildNumber}
+                    container_name: nw-auth
+                    hostname: $INSTANCE_ID
+                    volumes:
+                      - ./log:/home/nextw/log
+                      - /etc/ssl/certs/nextworld:/etc/ssl/certs/nextworld
+                    env_file:
+                      - /etc/environment
+                    ports:
+                      - "8084:8084"
+                      - "9464:9464"
+                    depends_on:
+                      datadog:
+                        condition: service_started
+                    healthcheck:
+                      test: ["CMD", "curl", "-Ik", "https://localhost:8084/HealthCheck"]
+                      interval: 30s
+                      timeout: 10s
+                      retries: 3
+                      start_period: 20s
+                  datadog:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/datadog:7.46.0-rc.3
+                    container_name: datadog
+                    env_file:
+                      - /etc/environment
+                    environment:
+                      - DD_API_KEY=${nwDatadogApiKey}
+                      - DD_SITE=datadoghq.com
+                      - DD_LOGS_ENABLED=true
+                      - DD_PROCESS_AGENT_ENABLED=false
+                      - DD_ENABLE_PAYLOADS_EVENTS=false
+                      - DD_ENABLE_PAYLOADS_SERIES=false
+                      - DD_ENABLE_PAYLOADS_SERVICE_CHECKS=false
+                      - DD_ENABLE_PAYLOADS_SKETCHES=false
+                      - DD_EC2_PREFER_IMDSV2=true
+                    volumes:
+                      - /run/docker.sock:/var/run/docker.sock
+                      - /var/log:/var/log
+                      - ./datadog/conf.d:/etc/datadog-agent/conf.d 
+                      - ./log:/log
+                  otel:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aws-otel-collector:v0.28.0
+                    command: ["--config=/etc/otel-agent-config.yaml"]
+                    container_name: otel-collector
+                    ports:
+                      - "4317:4317"
+                    env_file:
+                      - /etc/environment
+                    volumes:
+                      - /home/nextw/otel/config.yaml:/etc/otel-agent-config.yaml
+                  node-exporter:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/node-exporter:v1.6.0
+                    container_name: node-exporter
+                    restart: unless-stopped
+                    volumes:
+                      - /proc:/host/proc:ro
+                      - /sys:/host/sys:ro
+                      - /:/rootfs:ro
+                    command:
+                      - '--path.procfs=/host/proc'
+                      - '--path.rootfs=/rootfs'
+                      - '--path.sysfs=/host/sys'
+                      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                    ports:
+                      - "9100:9100"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-service-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The nwserver.log file
+                  - type: file
+                    path: /log/nwserver.log
+                    service: ServerLogger
+                    source: Nextworld
+                    log_processing_rules:
+                      - type: multi_line
+                        name: multi_line_rule
+                        pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])T\d{2}:\d{2}:\d{2}\.\d{3}
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:AUTH"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-ec2-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The cloudformation bootstrap script log
+                  - type: file
+                    path: /var/log/cfn-init.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:AUTH"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The cloud initialization output log
+                  - type: file
+                    path: /var/log/cloud-init-output.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:AUTH"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The operations bootstrapping file
+                  - type: file
+                    path: /var/log/ops.out
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:AUTH"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/otel/config.yaml:
+              content: !Sub |
+                extensions:
+                  health_check:
+                  pprof:
+                    endpoint: 0.0.0.0:1777
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                processors:
+                  batch:
+                exporters:
+                  logging:
+                    loglevel: debug
+                  awsxray:
+                    region: ${AWS::Region}
+                  awsemf:
+                    region: ${AWS::Region}
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [awsxray]
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/signal.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                # Set increment
+                I=0
+                
+                # Trap the CFN signal
+                trap '/opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAUTH \
+                  --region ${AWS::Region}' ERR
+                
+                # Pull and stand up containers
+                echo "Logging into ECR..."
+                aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS \
+                  --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                
+                echo "Pulling images..."
+                docker-compose -f /home/nextw/docker-compose.yaml pull --quiet
+                
+                echo "Standing up images..."
+                docker-compose -f /home/nextw/docker-compose.yaml up -d nw-auth
+                docker-compose -f /home/nextw/docker-compose.yaml up -d otel
+                docker-compose -f /home/nextw/docker-compose.yaml up -d node-exporter
+                echo "Trapping signal reporting until container is healthy..."
+                
+                # Hold the signal until the container is marked healthy
+                while [[ $(docker ps -f health=healthy -f name=nw-auth -q | wc -l) -eq 0 && "$I" -lt 140 ]]
+                do
+                  # Wait a moment
+                  sleep 1
+                
+                  # If the status is empty, something is wrong. We should be unhealthy
+                  STATUS=$(docker inspect --format='{{json .State.Health.Status}}' nw-auth)
+                  if [ -z "$STATUS" ]
+                  then
+                    echo "ERROR - No status reported! The containers didn't start! nwBuildNumber is ${nwBuildNumber}"
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAUTH \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                
+                  # Report status back
+                  if ! (( I % 10 ))
+                  then
+                    echo "The Nextworld container is $STATUS after $I seconds..."
+                  fi
+                
+                  # Increment counter
+                  I=$((I+1))
+                
+                  if (( I >= 139 ))
+                  then
+                    echo "The Nextworld container timed out with a status of $STATUS. Sending unhealthy signal..."
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                done
+                
+                /opt/aws/bin/cfn-signal --exit-code 0 --stack ${AWS::StackName} --resource ASGAUTH \
+                  --region ${AWS::Region}
+                echo "The Nextworld container is $STATUS after $I seconds!"
+              mode: '000700'
+              owner: root
+              group: root
+          commands:
+            Logs that cfn-init ran:
+              command: echo 'cfn-init ran successfully.' > /var/log/ops.out
+    Properties:
+      LaunchTemplateName: !Join
+        - ''
+        - - !Sub '${AWS::StackName}'
+          - '-auth'
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - AMIMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux
+        InstanceType: !Ref instanceTypeAUTH
+        KeyName: !Ref KeyPair
+        IamInstanceProfile:
+          Name: !Ref 'StackInstanceProfile'
+        SecurityGroupIds:
+          - !Ref InstanceSG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            echo export INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /root/.bashrc
+            source /root/.bashrc
+            exec > >(tee /var/log/ops.out|logger -t user-data -s 2>/var/log/ops.err) 2>&1
+
+            # Run cfn-init. This invokes the Metadata specified above which sets up and triggers the aws logging 
+            # service. It also sets up cfn-signal which instances use to signal SUCCESS to the stack
+            /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LTAUTH --region ${AWS::Region} -c ascending \
+                >> /var/log/ops.out
+
+            # Trigger to force a refresh of the autoscaling group
+            echo ${versionAUTH}
+            
+            # Set the Instance ID and export to /etc/environment
+            echo INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /etc/environment
+
+            # Set the keystore password from the randomized characters used at AMI creation
+            echo NW_TLS_KEYSTORE_PASS=$(echo $GRIZPASS) >> /etc/environment
+
+            # Run the bootstrap and trap the CFN signal
+            bash /home/nextw/signal.sh
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 30
+
+  # Launch template for the APITEST servers (bootstrapping)
+  LTAPITEST:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: ApiTestEnable
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ascending:
+            - 'folder'
+            - 'config'
+          descending:
+            - 'config'
+            - 'folder'
+        folder:
+          commands:
+            create datadog ec2 directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-ec2-logs.d
+            create datadog service directory:
+              command: mkdir -p /home/nextw/datadog/conf.d/nw-service-logs.d
+            create otel directory:
+              command: mkdir -p /home/nextw/otel
+        config:
+          files:
+            /etc/environment:
+              content: !Sub |
+                LOG4J_FORMAT_MSG_NO_LOOKUPS=true
+                NW_HOME_DIR=/home/nextw
+                NW_STACK_TYPE=APITEST
+                NW_TLS_DISABLE=false
+                NW_TLS_KEYSTORE_LOC=/etc/ssl/certs/nextworld/nwks.jks
+                NW_LOG_DIR=/home/nextw/log/
+                OTEL_RESOURCE_ATTRIBUTES=service.name=${AWS::StackName},service.namespace=${nwServerIdApiTEST}
+                OTEL_TRACES_SAMPLER=parentbased_traceidratio
+                OTEL_TRACES_EXPORTER=otlp
+                OTEL_METRICS_EXPORTER=prometheus
+                OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OtelCollectorHostname}:4317
+                OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+                OTEL_EXPORTER_PROMETHEUS_PORT=9464
+                OTEL_TRACES_SAMPLER_ARG=${OtelTracesSampler}
+                LOG_OUT=/home/nextw/log/nwserver.log
+                LOG_ERR=/home/nextw/log/nwserver.log
+                S3_BUCKET=${S3BucketServer}
+                NW_STACK_NAME=${AWS::StackName}
+                NW_GIT_BRANCH=${nwBuildNumber}
+                NW_SYS_DB=${nwDbConnection}
+                NW_SERVER_ID=${nwServerIdApiTEST}
+                NW_USE_AWSSM_BOOTSTRAP=${nwUseAwsSm}
+                NW_BOOTSTRAP_SECRET_NAME=${nwBootstrapSecret}
+                NW_AWSSM_REGION=${nwAwsSmRegion}
+                NW_CLOUD_SCHEMA=${nwCloudSchema}
+                NW_CLOUDAUTH_SCHEMA=${nwCloudAuthSchema}
+                NW_DATADOG_API_KEY=${nwDatadogApiKey}
+                NW_RELEASE=${Release}
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/docker-compose.yaml:
+              content: !Sub |
+                version: "3.9"
+                services:
+                  nw-api-test:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/nw-api:${nwBuildNumber}
+                    container_name: nw-api-test
+                    hostname: $INSTANCE_ID
+                    volumes:
+                      - ./log:/home/nextw/log
+                      - /etc/ssl/certs/nextworld:/etc/ssl/certs/nextworld
+                    env_file:
+                      - /etc/environment
+                    ports:
+                      - "8084:8084"
+                      - "9464:9464"
+                    depends_on:
+                      datadog:
+                        condition: service_started
+                    healthcheck:
+                      test: ["CMD", "curl", "-Ik", "https://localhost:8084/HealthCheck"]
+                      interval: 30s
+                      timeout: 10s
+                      retries: 3
+                      start_period: 20s
+                  datadog:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/datadog:7.46.0-rc.3
+                    container_name: datadog
+                    env_file:
+                      - /etc/environment
+                    environment:
+                      - DD_API_KEY=${nwDatadogApiKey}
+                      - DD_SITE=datadoghq.com
+                      - DD_LOGS_ENABLED=true
+                      - DD_PROCESS_AGENT_ENABLED=false
+                      - DD_ENABLE_PAYLOADS_EVENTS=false
+                      - DD_ENABLE_PAYLOADS_SERIES=false
+                      - DD_ENABLE_PAYLOADS_SERVICE_CHECKS=false
+                      - DD_ENABLE_PAYLOADS_SKETCHES=false
+                      - DD_EC2_PREFER_IMDSV2=true
+                    volumes:
+                      - /run/docker.sock:/var/run/docker.sock
+                      - /var/log:/var/log
+                      - ./datadog/conf.d:/etc/datadog-agent/conf.d 
+                      - ./log:/log
+                  otel:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/aws-otel-collector:v0.28.0
+                    command: ["--config=/etc/otel-agent-config.yaml"]
+                    container_name: otel-collector
+                    ports:
+                      - "4317:4317"
+                    env_file:
+                      - /etc/environment
+                    volumes:
+                      - /home/nextw/otel/config.yaml:/etc/otel-agent-config.yaml
+                  node-exporter:
+                    image: ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/node-exporter:v1.6.0
+                    container_name: node-exporter
+                    restart: unless-stopped
+                    volumes:
+                      - /proc:/host/proc:ro
+                      - /sys:/host/sys:ro
+                      - /:/rootfs:ro
+                    command:
+                      - '--path.procfs=/host/proc'
+                      - '--path.rootfs=/rootfs'
+                      - '--path.sysfs=/host/sys'
+                      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                    ports:
+                      - "9100:9100"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-service-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The nwserver.log file
+                  - type: file
+                    path: /log/nwserver.log
+                    service: ServerLogger
+                    source: Nextworld
+                    log_processing_rules:
+                      - type: multi_line
+                        name: multi_line_rule
+                        pattern: \d{4}\-(0?[1-9]|1[012])\-(0?[1-9]|[12][0-9]|3[01])T\d{2}:\d{2}:\d{2}\.\d{3}
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:APITEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/datadog/conf.d/nw-ec2-logs.d/conf.yaml:
+              content: !Sub |
+                logs:    
+                  # The cloudformation bootstrap script log
+                  - type: file
+                    path: /var/log/cfn-init.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:APITEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The cloud initialization output log
+                  - type: file
+                    path: /var/log/cloud-init-output.log
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:APITEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+                  # The operations bootstrapping file
+                  - type: file
+                    path: /var/log/ops.out
+                    service: CloudLogger
+                    source: Nextworld
+                    tags:
+                      - "stackName:${AWS::StackName}"
+                      - "stackType:APITEST"
+                      - "release:${Release}"
+                      - "gitBranch:${nwBuildNumber}"
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/otel/config.yaml:
+              content: !Sub |
+                extensions:
+                  health_check:
+                  pprof:
+                    endpoint: 0.0.0.0:1777
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                        endpoint: 0.0.0.0:4317
+                processors:
+                  batch:
+                exporters:
+                  logging:
+                    loglevel: debug
+                  awsxray:
+                    region: ${AWS::Region}
+                  awsemf:
+                    region: ${AWS::Region}
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      exporters: [awsxray]
+              mode: '000644'
+              owner: root
+              group: root
+            /home/nextw/signal.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                # Set increment
+                I=0
+                
+                # Trap the CFN signal
+                trap '/opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPITEST \
+                  --region ${AWS::Region}' ERR
+                
+                # Pull and stand up containers
+                echo "Logging into ECR..."
+                aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS \
+                  --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                
+                echo "Pulling images..."
+                docker-compose -f /home/nextw/docker-compose.yaml pull --quiet
+                
+                echo "Standing up images..."
+                docker-compose -f /home/nextw/docker-compose.yaml up -d nw-api-test
+                docker-compose -f /home/nextw/docker-compose.yaml up -d otel
+                docker-compose -f /home/nextw/docker-compose.yaml up -d node-exporter
+                echo "Trapping signal reporting until container is healthy..."
+                
+                # Hold the signal until the container is marked healthy
+                while [[ $(docker ps -f health=healthy -f name=nw-api-test -q | wc -l) -eq 0 && "$I" -lt 140 ]]
+                do
+                  # Wait a moment
+                  sleep 1
+                
+                  # If the status is empty, something is wrong. We should be unhealthy
+                  STATUS=$(docker inspect --format='{{json .State.Health.Status}}' nw-api-test)
+                  if [ -z "$STATUS" ]
+                  then
+                    echo "ERROR - No status reported! The containers didn't start! nwBuildNumber is ${nwBuildNumber}"
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPITEST \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                
+                  # Report status back
+                  if ! (( I % 10 ))
+                  then
+                    echo "The Nextworld container is $STATUS after $I seconds..."
+                  fi
+                
+                  # Increment counter
+                  I=$((I+1))
+                
+                  if (( I >= 139 ))
+                  then
+                    echo "The Nextworld container timed out with a status of $STATUS. Sending unhealthy signal..."
+                    /opt/aws/bin/cfn-signal --exit-code 1 --stack ${AWS::StackName} --resource ASGAPI \
+                      --region ${AWS::Region}
+                    exit 1
+                  fi
+                done
+                
+                /opt/aws/bin/cfn-signal --exit-code 0 --stack ${AWS::StackName} --resource ASGAPITEST \
+                  --region ${AWS::Region}
+                echo "The Nextworld container is $STATUS after $I seconds!"
+              mode: '000700'
+              owner: root
+              group: root
+          commands:
+            Logs that cfn-init ran:
+              command: echo 'cfn-init ran successfully.' > /var/log/ops.out
+    Properties:
+      LaunchTemplateName: !Join
+        - ''
+        - - !Sub '${AWS::StackName}'
+          - '-api-test'
+      LaunchTemplateData:
+        ImageId: !FindInMap
+          - AMIMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux
+        InstanceType: !Ref instanceTypeTESTAPI
+        KeyName: !Ref KeyPair
+        IamInstanceProfile:
+          Name: !Ref 'StackInstanceProfile'
+        SecurityGroupIds:
+          - !Ref InstanceSG
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            echo export INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /root/.bashrc
+            source /root/.bashrc
+            exec > >(tee /var/log/ops.out|logger -t user-data -s 2>/var/log/ops.err) 2>&1
+
+            # Run cfn-init. This invokes the Metadata specified above which sets up and triggers the aws logging 
+            # service. It also sets up cfn-signal which instances use to signal SUCCESS to the stack
+            /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource LTAPITEST --region ${AWS::Region} -c ascending \
+                >> /var/log/ops.out
+
+            # Trigger to force a refresh of the autoscaling group
+            echo ${versionAPITEST}
+            
+            # Set the Instance ID and export to /etc/environment
+            echo INSTANCE_ID=$(ec2-metadata -i | cut -d' ' -f2) >> /etc/environment
+
+            # Set the keystore password from the randomized characters used at AMI creation
+            echo NW_TLS_KEYSTORE_PASS=$(echo $GRIZPASS) >> /etc/environment
+
+            # Run the bootstrap and trap the CFN signal
+            bash /home/nextw/signal.sh
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 30
+
+  # Autoscaling group for the API servers
+  ASGAPI:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - a
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - b
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - c
+      DesiredCapacity: !Ref countAPI
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      MaxSize: '10'
+      MinSize: !If
+        - ApiCountZero
+        - '0'
+        - '2'
+      MaxInstanceLifetime: 540000
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet3-${NetworkStackNameParameter}'
+      MetricsCollection:
+        - Granularity: 1Minute
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateName: !Join
+              - ''
+              - - !Sub '${AWS::StackName}'
+                - '-api'
+            Version: !GetAtt
+              - LTAPI
+              - LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref instanceTypeAPI
+            - InstanceType: m6id.large
+            - InstanceType: m5d.large
+            - InstanceType: m5.large
+        InstancesDistribution:
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: 100
+          SpotAllocationStrategy: capacity-optimized
+          SpotMaxPrice: ''
+      NotificationConfigurations:
+        - TopicARN: !Ref SlackNotificationTopic
+          NotificationTypes:
+            - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+            - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      TargetGroupARNs:
+        - !Ref APITargetGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - api
+              - !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: release
+          Value: !Ref Release
+          PropagateAtLaunch: true
+        - Key: email
+          Value: !Ref Email
+          PropagateAtLaunch: true
+        - Key: location
+          Value: !Ref Location
+          PropagateAtLaunch: true
+        - Key: OTEL
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: ServerID
+          Value: !Ref nwServerIdAPI
+          PropagateAtLaunch: true
+      TerminationPolicies:
+        - OldestInstance
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: false
+      AutoScalingRollingUpdate:
+        MinSuccessfulInstancesPercent: 75
+        WaitOnResourceSignals: true
+        MinInstancesInService: !Ref countAPI
+        PauseTime: PT5M
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref countAPI
+        Timeout: PT7M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 75
+
+  # Autoscaling group for the GEN servers
+  ASGGEN:
+    Condition: GenEnable
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - a
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - b
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - c
+      DesiredCapacity: !Ref countGEN
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      MaxSize: !Ref countMaxGEN
+      MinSize: !If
+        - GenCountZero
+        - '0'
+        - '1'
+      MaxInstanceLifetime: 540000
+      MetricsCollection:
+        - Granularity: 1Minute
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet3-${NetworkStackNameParameter}'
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateName: !Join
+              - ''
+              - - !Sub '${AWS::StackName}'
+                - '-gen'
+            Version: !GetAtt
+              - LTGEN
+              - LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref instanceTypeGEN
+            - InstanceType: m6i.large
+            - InstanceType: m5d.large
+            - InstanceType: m5.large
+        InstancesDistribution:
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: !Ref onDemand
+          SpotAllocationStrategy: capacity-optimized
+          SpotMaxPrice: ''
+      NotificationConfigurations:
+        - TopicARN: !Ref SlackNotificationTopic
+          NotificationTypes:
+            - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+            - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      TargetGroupARNs:
+        - !Ref GENTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - gen
+              - !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: release
+          Value: !Ref Release
+          PropagateAtLaunch: true
+        - Key: email
+          Value: !Ref Email
+          PropagateAtLaunch: true
+        - Key: location
+          Value: !Ref Location
+          PropagateAtLaunch: true
+        - Key: OTEL
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: ServerID
+          Value: !Ref nwServerIdGEN
+          PropagateAtLaunch: true
+      TerminationPolicies:
+        - OldestInstance
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref countGEN
+        Timeout: PT5M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 75
+
+  # Autoscaling group for the TEST servers
+  ASGTEST:
+    Condition: TestEnable
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - a
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - b
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - c
+      DesiredCapacity: !Ref countTEST
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      MaxSize: !Ref countMaxTEST
+      MinSize: !If
+        - TestCountZero
+        - '0'
+        - '1'
+      MaxInstanceLifetime: 540000
+      MetricsCollection:
+        - Granularity: 1Minute
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet3-${NetworkStackNameParameter}'
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateName: !Join
+              - ''
+              - - !Sub '${AWS::StackName}'
+                - '-test'
+            Version: !GetAtt
+              - LTTEST
+              - LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref instanceTypeTEST
+            - InstanceType: r6i.large
+            - InstanceType: r5a.large
+            - InstanceType: r5d.large
+        InstancesDistribution:
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: !Ref onDemand
+          SpotAllocationStrategy: capacity-optimized
+          SpotMaxPrice: ''
+      NotificationConfigurations:
+        - TopicARN: !Ref SlackNotificationTopic
+          NotificationTypes:
+            - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+            - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      TargetGroupARNs:
+        - !Ref TESTTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - test
+              - !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: release
+          Value: !Ref Release
+          PropagateAtLaunch: true
+        - Key: email
+          Value: !Ref Email
+          PropagateAtLaunch: true
+        - Key: location
+          Value: !Ref Location
+          PropagateAtLaunch: true
+        - Key: OTEL
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: ServerID
+          Value: !Ref nwServerIdTEST
+          PropagateAtLaunch: true
+      TerminationPolicies:
+        - OldestInstance
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref countTEST
+        Timeout: PT7M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 75
+
+  # Autoscaling group for the AUTH servers
+  ASGAUTH:
+    Condition: AuthEnable
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - a
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - b
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - c
+      DesiredCapacity: !Ref countAUTH
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      MaxSize: '5'
+      MinSize: !If
+        - AuthCountZero
+        - '0'
+        - '2'
+      MaxInstanceLifetime: 540000
+      MetricsCollection:
+        - Granularity: 1Minute
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet3-${NetworkStackNameParameter}'
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateName: !Join
+              - ''
+              - - !Sub '${AWS::StackName}'
+                - '-auth'
+            Version: !GetAtt
+              - LTAUTH
+              - LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref instanceTypeAUTH
+            - InstanceType: m6id.large
+            - InstanceType: m5d.large
+            - InstanceType: m5.large
+        InstancesDistribution:
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: 100
+          SpotAllocationStrategy: capacity-optimized
+          SpotMaxPrice: ''
+      NotificationConfigurations:
+        - TopicARN: !Ref SlackNotificationTopic
+          NotificationTypes:
+            - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+            - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      TargetGroupARNs:
+        - !Ref AUTHTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - auth
+              - !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: release
+          Value: !Ref Release
+          PropagateAtLaunch: true
+        - Key: email
+          Value: !Ref Email
+          PropagateAtLaunch: true
+        - Key: location
+          Value: !Ref Location
+          PropagateAtLaunch: true
+        - Key: OTEL
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: ServerID
+          Value: !Ref nwServerIdAUTH
+          PropagateAtLaunch: true
+      TerminationPolicies:
+        - OldestInstance
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: false
+      AutoScalingRollingUpdate:
+        MinSuccessfulInstancesPercent: 75
+        WaitOnResourceSignals: true
+        MinInstancesInService: !Ref countAUTH
+        PauseTime: PT5M
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref countAUTH
+        Timeout: PT5M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 75
+
+  # Autoscaling group for the APITEST servers
+  ASGAPITEST:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: ApiTestEnable
+    Properties:
+      AvailabilityZones:
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - a
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - b
+        - !Join
+          - ''
+          - - !Sub '${AWS::Region}'
+            - c
+      DesiredCapacity: !Ref countAPITEST
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      MaxSize: '10'
+      MinSize: !If
+        - ApiTestCountZero
+        - '0'
+        - '2'
+      MaxInstanceLifetime: 540000
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PrivateSubnet3-${NetworkStackNameParameter}'
+      MetricsCollection:
+        - Granularity: 1Minute
+      MixedInstancesPolicy:
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateName: !Join
+              - ''
+              - - !Sub '${AWS::StackName}'
+                - '-api-test'
+            Version: !GetAtt
+              - LTAPITEST
+              - LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref instanceTypeTESTAPI
+            - InstanceType: m6id.large
+            - InstanceType: m5d.large
+            - InstanceType: m5.large
+        InstancesDistribution:
+          OnDemandBaseCapacity: 1
+          OnDemandPercentageAboveBaseCapacity: 100
+          SpotAllocationStrategy: capacity-optimized
+          SpotMaxPrice: ''
+      NotificationConfigurations:
+        - TopicARN: !Ref SlackNotificationTopic
+          NotificationTypes:
+            - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+            - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      TargetGroupARNs:
+        - !Ref APITESTTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - api-test
+              - !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: release
+          Value: !Ref Release
+          PropagateAtLaunch: true
+        - Key: email
+          Value: !Ref Email
+          PropagateAtLaunch: true
+        - Key: location
+          Value: !Ref Location
+          PropagateAtLaunch: true
+        - Key: OTEL
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+          PropagateAtLaunch: true
+        - Key: ServerID
+          Value: !Ref nwServerIdApiTEST
+          PropagateAtLaunch: true
+      TerminationPolicies:
+        - OldestInstance
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: false
+      AutoScalingRollingUpdate:
+        MinSuccessfulInstancesPercent: 75
+        WaitOnResourceSignals: true
+        MinInstancesInService: !Ref countAPITEST
+        PauseTime: PT5M
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref countAPITEST
+        Timeout: PT5M
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 75
+
+  # Application load balancer for the stack
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !Join
+            - '-'
+            - - nw
+              - !Sub '${AWS::Region}'
+              - log
+        - Key: access_logs.s3.prefix
+          Value: !Sub '${AWS::StackName}'
+      Scheme: internet-facing
+      Subnets:
+        - !ImportValue
+          'Fn::Sub': 'PublicSubnet1-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PublicSubnet2-${NetworkStackNameParameter}'
+        - !ImportValue
+          'Fn::Sub': 'PublicSubnet3-${NetworkStackNameParameter}'
+      SecurityGroups:
+        - !Ref LoadBalancerSG
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - alb
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - alb
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+
+  # The load balancer security group to allow https connections
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTPS to load balancer
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8446
+          ToPort: 8446
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - load-balancer
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+
+  # The instance security group to allow for instance specific connections
+  InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic to EC2 instance
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8084
+          ToPort: 8084
+          SourceSecurityGroupId: !Ref LoadBalancerSG
+        - IpProtocol: tcp
+          FromPort: 8084
+          ToPort: 8084
+          CidrIp: !ImportValue
+            'Fn::Sub': 'CIDR-${NetworkStackNameParameter}'
+        - IpProtocol: tcp
+          FromPort: 9100
+          ToPort: 9100
+          CidrIp: !ImportValue
+            'Fn::Sub': 'CIDR-${NetworkStackNameParameter}'
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref LoadBalancerSG
+        - IpProtocol: tcp
+          FromPort: 9464
+          ToPort: 9464
+          CidrIp: !ImportValue
+            'Fn::Sub': 'CIDR-${NetworkStackNameParameter}'
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !ImportValue
+            'Fn::Sub': 'CIDR-${NetworkStackNameParameter}'
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Ref Location
+              - !Ref Environment
+              - !Sub '${AWS::StackName}'
+              - instances
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+
+  # WAF that is tied to the application load balancer for traffic
+  WafAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref ALB
+      WebACLArn: !ImportValue
+        'Fn::Join':
+          - ''
+          - - Arn-StackWaf-
+            - !Sub '${AWS::Region}'
+
+  # The role that all instances will use to access AWS resources based on associated policies
+  StackInstancesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - Instance
+          - Role
+      Description: >-
+        Default permissions needed by all stack servers
+        to interact with their environment.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - autoscaling.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+  # The policy for accessing secret manager and pulling necessary secrets
+  SecretManager:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - Secret
+          - Manager
+      Roles:
+        - !Ref StackInstancesRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: '*'
+
+  # The policy for stack instance access to AWS resources
+  StackInstancesPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - Instances
+          - Policy
+      Roles:
+        - !Ref 'StackInstancesRole'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'iam:PassRole'
+            Resource: !Sub '${StackInstancesRole.Arn}'
+          - Effect: Allow
+            Action:
+              - autoscaling:CompleteLifecycleAction
+              - sns:Publish
+              - sns:Subscribe
+              - sqs:SendMessage
+              - sqs:GetQueueUrl
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+              - ec2:DescribeTags
+              - ec2:DescribeInstanceStatus
+              - ec2:DescribeInstances
+              - ec2:DescribeVolumes
+            Resource: '*'
+          - Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref 'S3BucketServer'
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:ListObject
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref 'S3BucketServer'
+                - '/*'
+          - Effect: Allow
+            Action: s3:ListBucket
+            Resource: 'arn:aws:s3:::nw-performance-issues'
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:ListObject
+              - s3:ListBucketMultipartUploads
+              - s3:AbortMultipartUpload
+              - s3:PutObjectVersionAcl
+              - s3:PutObjectAcl
+              - s3:ListMultipartUploadParts
+              - s3:CreateMultipartUpload
+            Resource: 'arn:aws:s3:::nw-performance-issues/*'
+          - Effect: Allow
+            Action:
+              - cloudformation:Signalresource
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:UpdateStack
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - logs:CancelExportTask
+              - logs:CreateExportTask
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:DescribeDestinations
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:DescribeMetricFilters
+              - logs:DescribeSubscriptionFilters
+              - logs:PutDestination
+              - logs:PutDestinationPolicy
+              - logs:PutLogEvents
+              - logs:PutMetricFilter
+              - logs:PutRetentionPolicy
+              - logs:PutSubscriptionFilter
+              - logs:TestMetricFilter
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - cloudwatch:PutMetricAlarm
+              - cloudwatch:PutMetricData
+              - cloudwatch:SetAlarmState
+            Resource: '*'
+          - Effect: Allow
+            Action: elasticloadbalancing:DescribeInstanceHealth
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ssm:DescribeAssociation
+              - ssm:GetDeployablePatchSnapshotForInstance
+              - ssm:GetDocument
+              - ssm:GetManifest
+              - ssm:GetParameters
+              - ssm:ListAssociations
+              - ssm:ListInstanceAssociations
+              - ssm:PutInventory
+              - ssm:PutComplianceItems
+              - ssm:PutConfigurePackageResult
+              - ssm:UpdateAssociationStatus
+              - ssm:UpdateInstanceAssociationStatus
+              - ssm:UpdateInstanceInformation
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ec2messages:AcknowledgeMessage
+              - ec2messages:DeleteMessage
+              - ec2messages:FailMessage
+              - ec2messages:GetEndpoint
+              - ec2messages:GetMessages
+              - ec2messages:SendReply
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - autoscaling:AttachInstances
+              - autoscaling:CompleteLifecycleAction
+              - autoscaling:CreateLaunchConfiguration
+              - autoscaling:CreateOrUpdateTags
+              - autoscaling:DeleteLaunchConfiguration
+              - autoscaling:DescribeTags
+              - autoscaling:DeleteTags
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:DetachLoadBalancers
+              - autoscaling:DisableMetricsCollection
+              - autoscaling:EnableMetricsCollection
+              - autoscaling:ExecutePolicy
+              - autoscaling:ExitStandby
+              - autoscaling:PutNotificationConfiguration
+              - autoscaling:RecordLifecycleActionHeartbeat
+              - autoscaling:ResumeProcesses
+              - autoscaling:SetDesiredCapacity
+              - autoscaling:SetInstanceHealth
+              - autoscaling:SetInstanceProtection
+              - autoscaling:SuspendProcesses
+              - autoscaling:UpdateAutoScalingGroup
+            Resource: '*'
+
+  # The role profile to use for the stack (associated with the stack instances role)
+  StackInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - Instance
+          - Profile
+      Path: "/"
+      Roles:
+        - !Ref StackInstancesRole
+
+  # The listener for HTTPS connections on the application load balancer
+  ListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+        - CertificateArn: !Join
+            - ''
+            - - 'arn:aws:acm:'
+              - !Sub '${AWS::Region}'
+              - ':'
+              - !Sub '${AWS::AccountId}'
+              - ':'
+              - certificate/
+              - !Ref LoadBalancerCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref APITargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+
+  # The listener for the TCP connections on the application load balancer
+  ListenerTCP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+        - CertificateArn: !Join
+            - ''
+            - - 'arn:aws:acm:'
+              - !Sub '${AWS::Region}'
+              - ':'
+              - !Sub '${AWS::AccountId}'
+              - ':'
+              - certificate/
+              - !Ref LoadBalancerCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref APITargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 8446
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+
+  # The target group that is used for the API servers in this stack (tied to the ASGAPI)
+  APITargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ALB
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /HealthCheck
+      HealthCheckPort: '8084'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8084
+      Protocol: HTTPS
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - api
+          - tg
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - api
+              - tg
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+        - Key: OTEL
+          Value: 'true'
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+        - Key: ServerID
+          Value: !Ref nwServerIdAPI
+      TargetGroupAttributes:
+        - Key: slow_start.duration_seconds
+          Value: '30'
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      UnhealthyThresholdCount: 10
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+
+  # The listener rule for the APITEST target group
+  APITESTListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: ApiTestEnable
+    DependsOn: ALB
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref APITESTTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - api-test*.*
+      ListenerArn: !Ref ListenerHTTPS
+      Priority: 2
+
+  # The target group that is used for the APITEST servers in this stack (tied to the ASGAPITEST)
+  APITESTTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: ApiTestEnable
+    DependsOn: ALB
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /HealthCheck
+      HealthCheckPort: '8084'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8084
+      Protocol: HTTPS
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - apit
+          - tg
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - apit
+              - tg
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+        - Key: OTEL
+          Value: 'true'
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+        - Key: ServerID
+          Value: !Ref nwServerIdApiTEST
+      TargetGroupAttributes:
+        - Key: slow_start.duration_seconds
+          Value: '30'
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      UnhealthyThresholdCount: 6
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+
+  # The listener rule for the AUTH target group
+  AUTHListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: AuthEnable
+    DependsOn: ALB
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AUTHTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - auth*.*
+      ListenerArn: !Ref ListenerHTTPS
+      Priority: 1
+
+  # The target group that is used for the AUTH servers in this stack (tied to the ASGAUTH)
+  AUTHTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: AuthEnable
+    DependsOn: ALB
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /HealthCheck
+      HealthCheckPort: '8084'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8084
+      Protocol: HTTPS
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - auth
+          - tg
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - auth
+              - tg
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+        - Key: OTEL
+          Value: 'true'
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+        - Key: ServerID
+          Value: !Ref nwServerIdAUTH
+      TargetGroupAttributes:
+        - Key: slow_start.duration_seconds
+          Value: '30'
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      UnhealthyThresholdCount: 6
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+
+  # The listener rule for the GEN target group
+  GENListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: GenEnable
+    DependsOn: ALB
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref GENTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - DOESNOTROUTE.*
+      ListenerArn: !Ref ListenerHTTPS
+      Priority: 3
+
+  # The target group that is used for the GEN servers in this stack (tied to the ASGGEN)
+  GENTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: GenEnable
+    DependsOn: ALB
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /HealthCheck
+      HealthCheckPort: '8084'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8084
+      Protocol: HTTPS
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - gen
+          - tg
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - gen
+              - tg
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+        - Key: OTEL
+          Value: 'true'
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+        - Key: ServerID
+          Value: !Ref nwServerIdGEN
+      TargetGroupAttributes:
+        - Key: slow_start.duration_seconds
+          Value: '30'
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      UnhealthyThresholdCount: 10
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+
+  # The listener rule for the TEST target group
+  TESTListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: TestEnable
+    DependsOn: ALB
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TESTTargetGroup
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - TESTDOESNOTROUTE.*
+      ListenerArn: !Ref ListenerHTTPS
+      Priority: 4
+
+  # The target group that is used for the TEST servers in this stack (tied to the ASGTEST)
+  TESTTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: TestEnable
+    DependsOn: ALB
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /HealthCheck
+      HealthCheckPort: '8084'
+      HealthCheckProtocol: HTTPS
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Port: 8084
+      Protocol: HTTPS
+      Name: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - test
+          - tg
+      Tags:
+        - Key: Name
+          Value: !Join
+            - .
+            - - !Sub '${AWS::StackName}'
+              - test
+              - tg
+        - Key: environment
+          Value: !Ref Environment
+        - Key: release
+          Value: !Ref Release
+        - Key: email
+          Value: !Ref Email
+        - Key: location
+          Value: !Ref Location
+        - Key: OTEL
+          Value: 'true'
+        - Key: nwBuildNumber
+          Value: !Ref nwBuildNumber
+        - Key: ServerID
+          Value: !Ref nwServerIdTEST
+      TargetGroupAttributes:
+        - Key: slow_start.duration_seconds
+          Value: '30'
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      UnhealthyThresholdCount: 10
+      VpcId: !ImportValue
+        'Fn::Sub': 'VPC-${NetworkStackNameParameter}'
+
+  # The scaling rules for the API autoscaling group
+  APIMaintainGroupSize:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      EstimatedInstanceWarmup: 180
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join
+            - /
+            - - !GetAtt
+                - ALB
+                - LoadBalancerFullName
+              - !GetAtt
+                - APITargetGroup
+                - TargetGroupFullName
+        TargetValue: 250
+      AutoScalingGroupName: !Ref ASGAPI
+
+  # Predictive autoscaling configurations for traffic requests on the API servers (monitor and scale)
+  APIPredictiveRequests:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAPI
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ALBRequestCount
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - APITargetGroup
+                    - TargetGroupFullName
+            TargetValue: 250
+        Mode: ForecastAndScale
+        SchedulingBufferTime: 180
+
+  # Predictive autoscaling configurations for cpu load on the API servers (monitor only)
+  APIPredictiveCPU:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAPI
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ASGCPUUtilization
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - APITargetGroup
+                    - TargetGroupFullName
+            TargetValue: 75
+        Mode: ForecastOnly
+        SchedulingBufferTime: 180
+
+  # The scaling rules for the APITEST autoscaling group
+  APITESTMaintainGroupSize:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: ApiTestEnable
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      EstimatedInstanceWarmup: 120
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join
+            - /
+            - - !GetAtt
+                - ALB
+                - LoadBalancerFullName
+              - !GetAtt
+                - APITESTTargetGroup
+                - TargetGroupFullName
+        TargetValue: 100
+      AutoScalingGroupName: !Ref ASGAPITEST
+
+  # Predictive autoscaling configurations for traffic requests on the APITEST servers (monitor and scale)
+  APITESTPredictiveRequests:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: ApiTestEnable
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAPITEST
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ALBRequestCount
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - APITESTTargetGroup
+                    - TargetGroupFullName
+            TargetValue: 250
+        Mode: ForecastAndScale
+        SchedulingBufferTime: 180
+
+  # Predictive autoscaling configurations for cpu load on the APITEST servers (monitor only)
+  APITESTPredictiveCPU:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: ApiTestEnable
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAPITEST
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ASGCPUUtilization
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - APITESTTargetGroup
+                    - TargetGroupFullName
+            TargetValue: 75
+        Mode: ForecastOnly
+        SchedulingBufferTime: 180
+
+  # The scaling rules for the AUTH autoscaling group
+  AUTHMaintainGroupSize:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: AuthEnable
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      EstimatedInstanceWarmup: 120
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join
+            - /
+            - - !GetAtt
+                - ALB
+                - LoadBalancerFullName
+              - !GetAtt
+                - AUTHTargetGroup
+                - TargetGroupFullName
+        TargetValue: 250
+      AutoScalingGroupName: !Ref ASGAUTH
+
+  # Predictive autoscaling configurations for traffic requests on the AUTH servers (monitor and scale)
+  AUTHPredictiveRequests:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: AuthEnable
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAUTH
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ALBRequestCount
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - AUTHTargetGroup
+                    - TargetGroupFullName
+            TargetValue: 250
+        Mode: ForecastAndScale
+        SchedulingBufferTime: 180
+
+  # Predictive autoscaling configurations for cpu load on the AUTH servers (monitor only)
+  AUTHPredictiveCPU:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Condition: AuthEnable
+    Properties:
+      PolicyType: PredictiveScaling
+      AutoScalingGroupName: !Ref ASGAUTH
+      PredictiveScalingConfiguration:
+        MaxCapacityBreachBehavior: HonorMaxCapacity
+        MetricSpecifications:
+          - PredefinedMetricPairSpecification:
+              PredefinedMetricType: ASGCPUUtilization
+              ResourceLabel: !Join
+                - /
+                - - !GetAtt
+                    - ALB
+                    - LoadBalancerFullName
+                  - !GetAtt
+                    - AUTHTargetGroup
+                    - TargetGroupFullName
+            TargetValue: 75
+        Mode: ForecastOnly
+        SchedulingBufferTime: 180
+
+  # Alarm that should fire for an unhealthy API instance - is this needed?
+  UnHealthyAPIAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: !Ref AlarmsEnabled
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 5
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Ref SlackNotificationTopic
+      OKActions:
+        - !Ref SlackNotificationTopic
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt
+            - ALB
+            - LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt
+            - APITargetGroup
+            - TargetGroupFullName
+
+  # Alarm that should fire for an unhealthy APITEST instance - is this needed?
+  UnHealthyAPITESTAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ApiTestEnable
+    Properties:
+      ActionsEnabled: !Ref AlarmsEnabled
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 5
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Ref SlackNotificationTopic
+      OKActions:
+        - !Ref SlackNotificationTopic
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt
+            - ALB
+            - LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt
+            - APITESTTargetGroup
+            - TargetGroupFullName
+
+  # Alarm that should fire for an unhealthy AUTH instance - is this needed?
+  UnHealthyAUTHAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: AuthEnable
+    Properties:
+      ActionsEnabled: !Ref AlarmsEnabled
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 5
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Ref SlackNotificationTopic
+      OKActions:
+        - !Ref SlackNotificationTopic
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt
+            - ALB
+            - LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt
+            - AUTHTargetGroup
+            - TargetGroupFullName
+
+  # Alarm that should fire for an unhealthy GEN instance - is this needed?
+  UnHealthyGENAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: GenEnable
+    Properties:
+      ActionsEnabled: !Ref AlarmsEnabled
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 5
+      TreatMissingData: ignore
+      AlarmActions:
+        - !Ref SlackNotificationTopic
+      OKActions:
+        - !Ref SlackNotificationTopic
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Period: 60
+      Statistic: Sum
+      Threshold: 1
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt
+            - ALB
+            - LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt
+            - GENTargetGroup
+            - TargetGroupFullName
+
+  # Lambda with unknown functionality - is this needed?
+  CloudWatchToSlack:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !Join
+        - ':'
+        - - 'arn:aws:iam:'
+          - !Sub '${AWS::AccountId}'
+          - role/lambda-role
+      Code:
+        S3Bucket: !Ref S3BucketLambda
+        S3Key: ops/lambda-zips/cloud-watch-to-slack.zip
+      Runtime: nodejs14.x
+      Timeout: 25
+      TracingConfig:
+        Mode: Active
+
+  # Lambda with unknown functionality - is this needed?
+  LaunchErrorNotifications:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !Join
+        - ':'
+        - - 'arn:aws:iam:'
+          - !Sub '${AWS::AccountId}'
+          - role/lambda-role
+      Code:
+        S3Bucket: !Ref S3BucketLambda
+        S3Key: ops/lambda-zips/launch-error-notifications.zip
+      Runtime: nodejs14.x
+      Timeout: 25
+      TracingConfig:
+        Mode: Active
+
+  # Lambda to perform lifecycle termination tasks - is this needed?
+  LifecycleHookOnTermination:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Role: !Join
+        - ':'
+        - - 'arn:aws:iam:'
+          - !Sub '${AWS::AccountId}'
+          - role/lambda-role
+      Code:
+        S3Bucket: !Ref S3BucketLambda
+        S3Key: ops/lambda-zips/lifecycle-hook-on-termination.zip
+      Runtime: python3.9
+      Timeout: 25
+      TracingConfig:
+        Mode: Active
+
+  # Lambda with unknown functionality related to CloudWatch to Slack - is this needed?
+  SlackLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SlackNotificationTopic
+      FunctionName: !Ref CloudWatchToSlack
+
+  # Lambda with unknown functionality - is this needed?
+  LaunchErrorInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref LaunchErrorTopic
+      FunctionName: !Ref LaunchErrorNotifications
+
+  # Lambda with unknown functionality - is this needed?
+  SSMLambdaInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SNSTermination
+      FunctionName: !Ref LifecycleHookOnTermination
+
+  # SNS topic related to launch error lambda - is this needed?
+  LaunchErrorTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt
+            - LaunchErrorNotifications
+            - Arn
+          Protocol: lambda
+      DisplayName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - LaunchErrorTopic
+
+  # SNS topic related to CloudWatch to Slack - is this needed?
+  SlackNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt
+            - CloudWatchToSlack
+            - Arn
+          Protocol: lambda
+      DisplayName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - SlackNotificationTopic
+
+  # SNS topic related to lifecycle termination - is this needed?
+  SNSTermination:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt
+            - LifecycleHookOnTermination
+            - Arn
+          Protocol: lambda
+      DisplayName: !Join
+        - '-'
+        - - !Sub '${AWS::StackName}'
+          - SNSTermination
+
+  # Lifecycle hook related to API termination - is this needed?
+  APITerminationLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref ASGAPI
+      HeartbeatTimeout: 40
+      LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING'
+      NotificationTargetARN: !Ref SNSTermination
+      RoleARN: !Sub '${StackInstancesRole.Arn}'
+
+  # Lifecycle hook related to APITEST termination - is this needed?
+  APITESTTerminationLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Condition: ApiTestEnable
+    Properties:
+      AutoScalingGroupName: !Ref ASGAPITEST
+      HeartbeatTimeout: 40
+      LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING'
+      NotificationTargetARN: !Ref SNSTermination
+      RoleARN: !Sub '${StackInstancesRole.Arn}'
+
+  # Lifecycle hook related to GEN termination - is this needed?
+  GENTerminationLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Condition: GenEnable
+    Properties:
+      AutoScalingGroupName: !Ref ASGGEN
+      HeartbeatTimeout: 40
+      LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING'
+      NotificationTargetARN: !Ref SNSTermination
+      RoleARN: !Sub '${StackInstancesRole.Arn}'
+
+  # Lifecycle hook related to AUTH termination - is this needed?
+  AUTHTerminationLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Condition: AuthEnable
+    Properties:
+      AutoScalingGroupName: !Ref ASGAUTH
+      HeartbeatTimeout: 40
+      LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING'
+      NotificationTargetARN: !Ref SNSTermination
+      RoleARN: !Sub '${StackInstancesRole.Arn}'
+
+  # Lifecycle hook related to TEST termination - is this needed?
+  TESTTerminationLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Condition: TestEnable
+    Properties:
+      AutoScalingGroupName: !Ref ASGTEST
+      HeartbeatTimeout: 40
+      LifecycleTransition: 'autoscaling:EC2_INSTANCE_TERMINATING'
+      NotificationTargetARN: !Ref SNSTermination
+      RoleARN: !Sub '${StackInstancesRole.Arn}'
+
+  # Subdomain created for API endpoint (stack specific)
+  APISubDomain:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !Join
+          - ''
+          - - dualstack.
+            - !GetAtt
+              - ALB
+              - DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt
+          - ALB
+          - CanonicalHostedZoneID
+      HostedZoneName: !Ref DnsHostedZone
+      Comment: >-
+        Created by Cloudformation, update stack to change. Do not change
+        directly.
+      Name: !Join
+        - ''
+        - - api-
+          - !Ref RegionUnitType
+          - !Ref DnsSubDomain
+      Type: A
+
+  # Subdomain created for APITEST endpoint (stack specific)
+  APITESTSubDomain:
+    Type: AWS::Route53::RecordSet
+    Condition: ApiTestEnable
+    Properties:
+      AliasTarget:
+        DNSName: !Join
+          - ''
+          - - dualstack.
+            - !GetAtt
+              - ALB
+              - DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt
+          - ALB
+          - CanonicalHostedZoneID
+      HostedZoneName: !Ref DnsHostedZone
+      Comment: >-
+        Created by Cloudformation, update stack to change. Do not change
+        directly.
+      Name: !Join
+        - ''
+        - - api-test-
+          - !Ref RegionUnitType
+          - !Ref DnsSubDomain
+      Type: A
+
+  # Subdomain created for AUTH endpoint (stack specific)
+  AUTHSubDomain:
+    Type: AWS::Route53::RecordSet
+    Condition: AuthEnable
+    Properties:
+      AliasTarget:
+        DNSName: !Join
+          - ''
+          - - dualstack.
+            - !GetAtt
+              - ALB
+              - DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt
+          - ALB
+          - CanonicalHostedZoneID
+      HostedZoneName: !Ref DnsHostedZone
+      Comment: >-
+        Created by Cloudformation, update stack to change. Do not change
+        directly.
+      Name: !Join
+        - ''
+        - - auth-
+          - !Ref RegionUnitType
+          - !Ref DnsSubDomain
+      Type: A
