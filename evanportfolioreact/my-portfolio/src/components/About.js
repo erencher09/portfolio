@@ -11,11 +11,11 @@ export default function About() {
               <br className="hidden lg:inline-block" />I love to build awesome cloud infrastructure.
             </h1>
             <p className="mb-8 leading-relaxed">
-            Experienced Cloud Operations Engineer, 
+            Experienced Cloud Operations Engineer,
             adept in CI/CD pipelines, Agile, 
             and AWS. Known for quickly mastering 
             new technologies and a growth mindset. 
-            Seeking a challenging role to develop new technologies 
+            Looking to develop new skills
             and drive continuous improvement with a talented team.
             </p>
             <div className="flex justify-center">
@@ -35,7 +35,7 @@ export default function About() {
             <img
               className="object-cover object-center rounded"
               alt="hero"
-              src="./coding.svg"
+              src="./avatar.png"
             />
           </div>
         </div>

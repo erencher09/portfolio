@@ -51,10 +51,17 @@ export const testimonials = [
 ];
 
 export const skills = [
-  "JavaScript",
-  "React",
-  "Next.js",
-  "Node",
-  "GraphQL",
-  "Material UI",
+  "AWS Certified Solutions Architect Associate",
+  "Stable Diffusion",
+  "Certified Scrum Master",
+  "CI/CD",
+  "Python",
+  "Linux",
+  "Git",
+  "Infrastructure as Code",
+  "PostgreSQL",
+  "Alerting and Monitoring",
+  "Docker/Kubernetes",
+  "Jira",
+
 ];
