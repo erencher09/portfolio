@@ -14,9 +14,13 @@ export default function Projects() {
             Products I've Built
           </h1>
           <p className="lg:w-2/3 mx-auto leading-relaxed text-base">
-            Lorem ipsum, dolor sit amet consectetur adipisicing elit. Explicabo
-            facilis repellat ab cupiditate alias vero aliquid obcaecati quisquam
-            fuga dolore.
+          I'm an experienced DevOps Engineer with expertise in AWS, specializing in building scalable cloud infrastructure 
+          for SaaS ERP applications. My proficiency in release management and automation allows me to
+          enhance release coordination and CI/CD pipeline efficiency. 
+          As a certified Scrum Master, I excel in leading agile teams, 
+          driving productivity and fostering innovation. I'm committed to delivering high-quality solutions, 
+          streamlining operations, and ensuring customer satisfaction.
+
           </p>
         </div>
         <div className="flex flex-wrap -m-4">
