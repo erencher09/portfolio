@@ -1,9 +1,9 @@
 export const projects = [
   {
-    title: "React Reserve",
-    subtitle: "MERN Stack",
+    title: "Machine Learning",
+    subtitle: "Stable Diffusion Project",
     description:
-      "Lorem ipsum dolor sit amet consectetur adipisicing elit. Praesentium dolore rerum laborum iure enim sint nemo omnis voluptate exercitationem eius?",
+      "Image of an iguana facing to the right on a tree branch, generated with stable diffusion",
     image: "./project-1.gif",
     link: "https://reactbootcamp.com",
   },
