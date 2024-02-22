@@ -3,33 +3,29 @@ export const projects = [
     title: "Machine Learning",
     subtitle: "Stable Diffusion Project",
     description:
-      "Image of an iguana facing to the right on a tree branch, generated with stable diffusion",
-    image: "./project-1.gif",
-    link: "https://reactbootcamp.com",
-  },
-  {
-    title: "React Tracks",
-    subtitle: "React and Python",
-    description:
-      "Lorem ipsum dolor sit amet consectetur adipisicing elit. Praesentium dolore rerum laborum iure enim sint nemo omnis voluptate exercitationem eius?",
+      "Utilized stable diffusion to do image generation, example: Image of an iguana facing to the right on a tree branch",
     image: "./project-2.gif",
-    link: "https://reactbootcamp.com",
   },
   {
-    title: "DevChat",
-    subtitle: "React and Firebase",
+    title: "Release Pipelines",
+    subtitle: "Release Deployments and Automations",
     description:
-      "Lorem ipsum dolor sit amet consectetur adipisicing elit. Praesentium dolore rerum laborum iure enim sint nemo omnis voluptate exercitationem eius?",
+      "Led and planned major upgrades, ranging from database upgrades to major rollouts of application code. Coordinated with partners, customers, and other teams to do successful and transparent upgrades for customers. Created scripts to automate deployments of code to production to dramatically reduce manual effort. ",
+    image: "./project-2.gif",
+  },
+  {
+    title: "Docker",
+    subtitle: "Deployed Docker applications",
+    description:
+      "Deployed containerized applications on AWS hosted EC2 instances, skilled in deploying other applications in docker containers such as Jenkins",
     image: "./project-3.gif",
-    link: "https://reactbootcamp.com",
   },
   {
-    title: "Epic Todo App",
-    subtitle: "React Hooks",
+    title: "Infrastructure as Code",
+    subtitle: "Infrastructure as Code",
     description:
-      "Lorem ipsum dolor sit amet consectetur adipisicing elit. Praesentium dolore rerum laborum iure enim sint nemo omnis voluptate exercitationem eius?",
+      "Utilized Cloud Formation to stand up web applications hosted in containers on AWS. Skilled in infrastructure and monitoring ranging from Route 53 and CloudFront to Aurora databases on PostgreSQL",
     image: "./project-4.gif",
-    link: "https://reactbootcamp.com",
   },
 ];
 
