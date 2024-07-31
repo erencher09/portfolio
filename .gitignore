@@ -3,5 +3,12 @@ node_modules
 .pnp.js
 package-lock.json
 Cloud Formation Course
-text-generation-webui-docker
+text-generation-webui-docker/
 Fun_Stuff/100-Days-of-Code
+django_ecommerce_mod5/
+learn-terraform-docker-container/
+E-Commerce-site/
+OneOffScripts/
+operations/
+Fun_Stuff/
+.gitignore
