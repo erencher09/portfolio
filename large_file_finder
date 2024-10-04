@@ -1,0 +1,44 @@
+import os
+import sys
+from collections import defaultdict
+
+def get_folder_size(folder_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+    return total_size
+
+def format_size(size):
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024.0:
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
+
+def find_largest_folders(root_path, top_n=10):
+    folder_sizes = defaultdict(int)
+
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        try:
+            folder_size = get_folder_size(dirpath)
+            folder_sizes[dirpath] = folder_size
+        except PermissionError:
+            print(f"Permission denied: {dirpath}")
+        except Exception as e:
+            print(f"Error processing {dirpath}: {e}")
+
+    sorted_folders = sorted(folder_sizes.items(), key=lambda x: x[1], reverse=True)
+    return sorted_folders[:top_n]
+
+if __name__ == "__main__":
+    root_path = "C:\\"
+    top_n = 10
+
+    print(f"Scanning {root_path} for the {top_n} largest folders...")
+    largest_folders = find_largest_folders(root_path, top_n)
+
+    print(f"\nTop {top_n} largest folders in {root_path}:")
+    for folder, size in largest_folders:
+        print(f"{folder}: {format_size(size)}")
